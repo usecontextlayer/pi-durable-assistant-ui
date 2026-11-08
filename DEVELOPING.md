@@ -62,3 +62,11 @@ See [feature coverage](FEATURES.md) for the tested behaviors, evidence sources, 
 The [adapter README](packages/adapter/README.md) owns the consumer integration contract. `apps/demo/server/local-client.ts` binds native Pi operations for both direct consumers and HTTP routes. HTTP owns request parsing, serialization, and SSE delivery; `apps/demo/src` composes Assistant UI primitives and the demo's Pi-specific controls.
 
 `SerializedAgentChange` represents selected tools, extensions, and model tools by registered names. The host resolves those names against Pi's registry before calling native `configure`; it does not serialize functions or store another configuration record. Omitted fields remain unchanged and `null` clears a field. Inspect the current native configuration through Conversation controls.
+
+## Releases
+
+Every push to `main` runs type checks, the build, native/unit tests and Chromium workflows in GitHub Actions. After those pass, semantic-release analyzes Conventional Commits and publishes `packages/adapter` to npm when a release is due. `fix` produces a patch, `feat` a minor, and `!` or a `BREAKING CHANGE` footer a major. Commits that do not call for a release still run verification.
+
+The adapter's `0.0.0-development` manifest version is a placeholder. Semantic-release owns published versions, Git tags and GitHub Release notes; it does not commit a version bump back to the repository. The private workspace and demo are not published.
+
+The workflow uses the repository's `NPM_TOKEN` secret and the built-in `GITHUB_TOKEN`. The npm token must have permission to create and publish packages in the `@usecontextlayer` scope. Authentication uses the token without OIDC; configure an npm trusted publisher before changing that. `mise.toml` supplies the CI toolchain, with its pnpm pin matching the root `packageManager` field. Release results and notes are available in [GitHub Actions](https://github.com/usecontextlayer/pi-durable-assistant-ui/actions/workflows/release.yml) and [GitHub Releases](https://github.com/usecontextlayer/pi-durable-assistant-ui/releases).

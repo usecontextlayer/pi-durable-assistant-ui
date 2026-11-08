@@ -25,9 +25,15 @@ export function PiChat({ children }: { children: ReactNode }) {
 - **Reconnect to ongoing work.** Streaming, earlier history, and reconnect gaps use native Pi views and `ConversationTranscript`. Closing a subscription does not cancel execution.
 - **Choose your host.** Implement `PiClient` or use the included HTTP/SSE client with the demo's protocol. The adapter has no dependency on the demo's Node/SQLite host.
 
-## Use it locally
+## Install
 
-The package is currently named `@usecontextlayer/pi-durable-assistant-ui` and has not been published. It builds as ESM with TypeScript declarations. It requires React 19 and `@assistant-ui/react` 0.15.32; Pi Durable, Pi AI, and Chord are pinned to 1.5.0.
+```sh
+pnpm add @usecontextlayer/pi-durable-assistant-ui @assistant-ui/react@0.15.32 react@19 react-dom@19
+```
+
+The package builds as ESM with TypeScript declarations. It requires React 19 and `@assistant-ui/react` 0.15.32; Pi Durable, Pi AI, and Chord are pinned to 1.5.0. Keep the client instance stable, as in the example above, and render your Assistant UI components inside `PiChat`. This package supplies the runtime integration, not the demo's components or server.
+
+## Build from source
 
 From the workspace root, build and pack it:
 
@@ -36,7 +42,7 @@ pnpm exec turbo run build --filter=@usecontextlayer/pi-durable-assistant-ui
 pnpm --dir packages/adapter pack
 ```
 
-Install the resulting tarball in your application and supply the React and Assistant UI peers. Keep the client instance stable, as in the example above, and render your Assistant UI components inside `PiChat`. This package supplies the runtime integration, not the demo's components or server.
+Install the resulting tarball in your application and supply the React and Assistant UI peers.
 
 ## Runtime and actions
 

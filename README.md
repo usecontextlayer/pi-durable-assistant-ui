@@ -33,7 +33,7 @@ The demo registers Haiku models only. Keys stay on the server. See [Developing](
 
 ## Use the adapter
 
-[`packages/adapter`](packages/adapter/README.md) provides `usePiRuntime`, `PiRuntimeStore`, an HTTP/SSE client, attachment support, and message projection. `usePiRuntime` supplies an Assistant UI `ExternalStoreRuntime`; your application supplies the components. The package is currently named `@usecontextlayer/pi-durable-assistant-ui` and has not been published.
+[`@usecontextlayer/pi-durable-assistant-ui`](https://www.npmjs.com/package/@usecontextlayer/pi-durable-assistant-ui) provides `usePiRuntime`, `PiRuntimeStore`, an HTTP/SSE client, attachment support, and message projection. `usePiRuntime` supplies an Assistant UI `ExternalStoreRuntime`; your application supplies the components. See the [adapter README](packages/adapter/README.md) for installation and integration.
 
 The [demo UI](apps/demo/src/App.tsx) composes Assistant UI primitives with Pi controls, tool renderers, and task inspection. Those components and the [local Node host](apps/demo/server/local-client.ts) are demo source, separate from the adapter package.
 
