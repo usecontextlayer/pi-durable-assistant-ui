@@ -1,6 +1,7 @@
 {
   "name": "@usecontextlayer/pi-durable-assistant-ui",
   "version": "0.0.0-development",
+  "license": "MIT",
   "description": "Assistant UI runtime adapter for Pi Durable conversations",
   "repository": {
     "type": "git",
