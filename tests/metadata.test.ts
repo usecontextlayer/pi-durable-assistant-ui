@@ -1,6 +1,8 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { defineDoc } from "@earendil-works/pi-durable";
 import { expect } from "vitest";
 import { openLocalPiHost } from "../apps/demo/server/host.js";
+import { createLocalPiDurableClient } from "../apps/demo/server/local-client.js";
 import {
   ConversationMetadataDoc,
   getConversationMetadata,
@@ -12,6 +14,64 @@ import { test } from "./support/fixtures.js";
 
 const context = BACKGROUND_CONTEXT;
 const ownership = { kind: "ownerless" } as const;
+
+test("opening an existing demo upgrades legacy metadata and initializes missing documents", async ({ dataDirectory }) => {
+  const LegacyPresentationDoc = defineDoc({
+    ...ConversationMetadataDoc.definition,
+    kind: "demo.presentation",
+    history: "latest",
+    fork: "initial",
+    initial: () => ({ ...ConversationMetadataDoc.definition.initial(), archived: false }),
+  });
+  let host = await openLocalPiHost({ dataDirectory });
+  let closed = false;
+  try {
+    const legacy = await host.harness.createConversation({ ownership, agent: host.defaultAgent }, context);
+    const missing = await host.harness.createConversation({ ownership, agent: host.defaultAgent }, context);
+    const current = await host.harness.createConversation({ ownership, agent: host.defaultAgent }, context);
+    const answer = await (await legacy.submit({ type: "input", content: "Preserve this answer and its feedback" }, context)).wait(context);
+    if (answer.status !== "done" || answer.type !== "input") throw new Error("Expected a native answer.");
+    const before = await legacy.entries({}, 100, undefined, context);
+    const expected = { title: "Legacy title", feedback: { [answer.answer]: "positive" as const }, suggestions: ["Keep going"] };
+    await host.harness.commit(async (tx) => {
+      await tx.retireDoc(ConversationMetadataDoc, legacy.id);
+      await tx.retireDoc(ConversationMetadataDoc, missing.id);
+      Object.assign(await tx.doc(LegacyPresentationDoc, legacy.id), expected, { archived: true });
+      (await tx.doc(ConversationMetadataDoc, current.id)).title = "Current title";
+      (await tx.doc(LegacyPresentationDoc, current.id)).title = "Superseded title";
+    }, context);
+    await host.close();
+    closed = true;
+
+    host = await openLocalPiHost({ dataDirectory });
+    closed = false;
+    const client = createLocalPiDurableClient(host);
+    const page = await client.listMetadata([legacy.id, missing.id, current.id]);
+    expect(page[String(legacy.id)]).toEqual(expected);
+    expect(page[String(missing.id)]).toMatchObject({ title: null, feedback: {} });
+    expect(page[String(current.id)]?.title).toBe("Current title");
+    expect(await host.harness.snapshot(LegacyPresentationDoc, legacy.id, context)).toBeUndefined();
+    expect(await (await host.harness.conversation(legacy.id, context))!.entries({}, 100, undefined, context)).toEqual(before);
+
+    const watch = await client.watchMetadata(legacy.id);
+    try {
+      expect(watch.value).toEqual(expected);
+      let title = watch.value.title;
+      watch.start(async (change) => { if (change.kind === "value") title = change.value.title; });
+      await client.updateMetadata(legacy.id, { title: "Updated after upgrade" });
+      await expect.poll(() => title).toBe("Updated after upgrade");
+    } finally {
+      await watch.stop();
+    }
+    await host.close();
+    closed = true;
+    host = await openLocalPiHost({ dataDirectory });
+    closed = false;
+    expect(await getConversationMetadata(host.harness, legacy.id, context)).toEqual({ ...expected, title: "Updated after upgrade" });
+  } finally {
+    if (!closed) await host.close();
+  }
+});
 
 test("metadata survives native SQLite reopen without changing the conversation transcript", async ({ dataDirectory }) => {
   let piHost = await openLocalPiHost({ dataDirectory });

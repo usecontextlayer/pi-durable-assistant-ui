@@ -4,7 +4,7 @@ import { ConversationTranscript, type ConversationId, type ConversationView, typ
 import type { AppendMessage } from "@assistant-ui/react";
 import type { PiDurableClient, PiDurableConnectionState, SerializedAgentChange } from "./client.js";
 import { EMPTY_CONVERSATION_METADATA, type ConversationMetadata } from "./metadata.js";
-import { entryIdFromMessageId, projectConversation, toPiUserInput } from "./projection.js";
+import { conversationLiveState, entryIdFromMessageId, projectConversation, toPiUserInput } from "./projection.js";
 
 export interface PiDurableConversationState {
   readonly view: TranscriptView | undefined;
@@ -126,12 +126,20 @@ export class PiDurableConversation {
     return fork;
   };
 
-  regenerate = async (parentId: string | null) => {
-    const messages = this.#state.view ? projectConversation(this.#state.view, this.#state.metadata) : [];
+  regenerate = async (parentId: string | null, sourceId?: string) => {
+    const view = this.#state.view;
+    const messages = view ? projectConversation(view, this.#state.metadata) : [];
     const index = parentId === null ? -1 : messages.findIndex((message) => message.id === parentId);
-    const answer = messages[index + 1];
+    const answer = sourceId === undefined ? messages[index + 1] : messages.find((message) => message.id === sourceId);
     if (!answer?.id || answer.role !== "assistant") throw new Error("No committed assistant response follows this message");
-    const target = entryIdFromMessageId(answer.id);
+    const failure = view && conversationLiveState(view).runFailure;
+    if (view && failure && answer.id === `failure:${failure.taskId}`) {
+      await this.continue();
+      return view.conversation;
+    }
+    const entryId = answer.metadata?.custom?.entryId;
+    if (typeof entryId !== "number") throw new Error("No committed assistant response follows this message");
+    const target = entryId as EntryId;
     const fork = await this.forkAt(target);
     await this.client.submit(fork.id, { type: "write", entry: { kind: "assistant-ui.context-edit", edits: [{ target, action: "omit" }] } });
     await this.client.submit(fork.id, { type: "continue" });

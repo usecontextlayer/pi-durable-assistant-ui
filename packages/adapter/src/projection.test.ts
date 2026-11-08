@@ -98,6 +98,21 @@ describe("Pi conversation projection", () => {
     expect(projected[0]).toMatchObject({ id: "entry:2:notice", metadata: { custom: { entryId: 2, entryKind: "pi.reset" } } });
   });
 
+  it.each([
+    ["pi.reset", "Carry forward the agreed decision"],
+    ["pi.compaction", "Summary of the preceding conversation"],
+  ])("shows %s model context only in its context notice", (kind, text) => {
+    const nativeEntry = entry(2, [{ role: "user", content: text, timestamp: 2 }], kind);
+    const projected = projectConversation(view([nativeEntry]));
+    expect(projected).toHaveLength(1);
+    expect(projected[0]).toMatchObject({
+      id: "entry:2:notice",
+      role: "assistant",
+      content: [{ type: "data", name: "pi-context", data: { kind, text } }],
+    });
+    expect(nativeEntry.model).toEqual([{ role: "user", content: text, timestamp: 2 }]);
+  });
+
   it("sends only new text and image input to Pi", () => {
     const input = toPiUserInput({
       content: [{ type: "text", text: "Describe this" }, { type: "image", image: "data:image/png;base64,YWJj" }],

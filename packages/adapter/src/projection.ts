@@ -100,12 +100,16 @@ export function projectConversationHistory(items: TranscriptView["items"], conve
     const entry = item.entry;
     if (SystemEntry.is(entry)) continue;
     if (CompactionEntry.is(entry) || ResetEntry.is(entry)) {
+      const text = (entry.model ?? []).flatMap((message) => message.role === "user"
+        ? typeof message.content === "string" ? [message.content] : message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+        : []).join("\n");
       messages.push({
         id: `entry:${entry.id}:notice`,
         role: "assistant",
-        content: [{ type: "data", name: "pi-context", data: { kind: entry.kind, data: entry.data } }],
+        content: [{ type: "data", name: "pi-context", data: { kind: entry.kind, data: entry.data, text } }],
         metadata: { custom: { conversationId: entry.conversationId, entryId: entry.id, entryKind: entry.kind, entryData: entry.data } },
       });
+      continue;
     }
     const edit = edits.get(entry.id)?.change;
     const model = edit ? (edit.action === "replace" ? edit.messages : []) : (entry.model ?? []);

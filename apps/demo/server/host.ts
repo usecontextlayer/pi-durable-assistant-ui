@@ -17,7 +17,7 @@ import { DemoTools } from "../scenarios/tools.js";
 import { BackgroundTools } from "../scenarios/background.js";
 import { createExecutionEnvironments, prepareLocalPaths, type LocalPaths } from "./env.js";
 import { humanInputExtension } from "./human-input.js";
-import { initializeConversationMetadata } from "./metadata.js";
+import { initializeConversationMetadata, upgradeConversationMetadata } from "./metadata.js";
 
 export interface OpenLocalPiHostOptions {
   dataDirectory: string;
@@ -70,6 +70,7 @@ export async function openLocalPiHost(options: OpenLocalPiHostOptions) {
     settings: options.settings ?? { toolExecution: "parallel" },
     conversationCreated: initializeConversationMetadata,
   }, BACKGROUND_CONTEXT);
+  await upgradeConversationMetadata(harness, BACKGROUND_CONTEXT);
   harness.resume();
 
   return {

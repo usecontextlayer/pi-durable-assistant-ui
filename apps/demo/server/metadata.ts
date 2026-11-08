@@ -3,6 +3,7 @@ import {
   defineDoc,
   type ConversationId,
   type ConversationRecord,
+  type Cursor,
   type EntryId,
   type Harness,
   type Tx,
@@ -33,8 +34,15 @@ export const ConversationMetadataDoc = defineDoc<ConversationMetadata>({
   checkpointWhen: () => true,
 });
 
+const LegacyPresentationDoc = defineDoc<ConversationMetadata>({
+  ...ConversationMetadataDoc.definition,
+  kind: "demo.presentation",
+  history: "latest",
+  fork: "initial",
+});
+
 function copyMetadata(value: Readonly<ConversationMetadata>): ConversationMetadata {
-  return { ...value, feedback: { ...value.feedback }, suggestions: [...value.suggestions] };
+  return { title: value.title, feedback: { ...value.feedback }, suggestions: [...value.suggestions] };
 }
 
 async function conversation(harness: Harness, id: ConversationId, context: Context) {
@@ -46,6 +54,26 @@ async function conversation(harness: Harness, id: ConversationId, context: Conte
 /** Use as HarnessOptions.conversationCreated, including for native forks. */
 export async function initializeConversationMetadata(tx: Tx, record: ConversationRecord): Promise<void> {
   await tx.doc(ConversationMetadataDoc, record.id);
+}
+
+/** Upgrade existing conversations before the host resumes tasks or accepts requests. */
+export async function upgradeConversationMetadata(harness: Harness, context: Context): Promise<void> {
+  let cursor: Cursor | undefined;
+  do {
+    const page = await harness.commit((tx) => tx.scanConversations({}, 100, cursor), context);
+    for (const { id } of page.items) {
+      if (await harness.snapshot(ConversationMetadataDoc, id, context)) continue;
+      const legacy = await harness.snapshot(LegacyPresentationDoc, id, context);
+      await harness.commit(async (tx) => {
+        const metadata = await tx.doc(ConversationMetadataDoc, id);
+        if (legacy) {
+          Object.assign(metadata, copyMetadata(legacy));
+          await tx.retireDoc(LegacyPresentationDoc, id);
+        }
+      }, context);
+    }
+    cursor = page.next;
+  } while (cursor);
 }
 
 export async function getConversationMetadata(

@@ -1,11 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test as base, type Page } from "@playwright/test";
 import type { EntryRecord } from "@earendil-works/pi-durable";
 import { startDemoServer } from "../../apps/demo/server/dev.js";
 
-const test = base.extend<{ streamingDemoUrl: string }, { demoUrl: string }>({
+const test = base.extend<{ streamingDemo: Awaited<ReturnType<typeof startDemoServer>> }, { demoUrl: string }>({
   demoUrl: [async ({}, use) => {
     const directory = await mkdtemp(join(tmpdir(), "pi-ui-browser-"));
     const demo = await startDemoServer({ dataDirectory: directory, provider: "faux", port: 0 });
@@ -16,11 +17,11 @@ const test = base.extend<{ streamingDemoUrl: string }, { demoUrl: string }>({
       await rm(directory, { recursive: true, force: true });
     }
   }, { scope: "worker" }],
-  streamingDemoUrl: async ({}, use) => {
+  streamingDemo: async ({}, use) => {
     const directory = await mkdtemp(join(tmpdir(), "pi-ui-streaming-browser-"));
     const demo = await startDemoServer({ dataDirectory: directory, provider: "faux", tokensPerSecond: 50, port: 0 });
     try {
-      await use(demo.url);
+      await use(demo);
     } finally {
       await demo.close();
       await rm(directory, { recursive: true, force: true });
@@ -114,6 +115,8 @@ test("editing, regenerating and resetting use native conversations and active co
   const reset = await (await page.request.get(`${demoUrl}/api/conversations/${regeneratedId}/context`)).json();
   expect(reset.messages).toMatchObject([{ role: "user", content: "Keep only this new handoff" }]);
   expect(reset.messages).toHaveLength(1);
+  await expect(page.locator(".message").filter({ has: page.locator(".context-notice") })).toContainText("Keep only this new handoff");
+  await expect(page.locator('[data-role="user"]')).not.toContainText("Keep only this new handoff");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("You said: Keep only this new handoff");
 });
@@ -137,8 +140,13 @@ test("image attachments and native file tools render in the full interface", asy
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("/files");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("Edited through Pi's native tool.");
-  await expect(page.locator(".tool-result").filter({ hasText: "Edit file" })).toHaveCount(1);
+  const editTool = page.locator(".tool-result").filter({ hasText: "Edit file" });
+  await expect(editTool).toHaveCount(1);
   await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
+  await editTool.locator("summary").click();
+  await expect(editTool.getByRole("heading", { name: "Details", exact: true })).toBeVisible();
+  await expect(editTool.locator('h3:has-text("Details") + pre')).toContainText('"diff"');
+  await expect(editTool.locator('h3:has-text("Details") + pre')).toContainText("Edited through Pi's native tool.");
 
   await page.getByRole("textbox", { name: "Message", exact: true }).fill("/image");
   await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -262,17 +270,25 @@ test("loading the model catalog preserves the selected native model when saving 
   }
 });
 
-test("independent browsers converge after a streaming connection goes offline and returns", async ({ page, context, browser, streamingDemoUrl }) => {
+test("independent browsers converge after a streaming connection goes offline and returns", async ({ page, context, browser, streamingDemo }) => {
+  const streamingDemoUrl = streamingDemo.url;
   const otherContext = await browser.newContext();
   const otherPage = await otherContext.newPage();
-  const session = await context.newCDPSession(page);
+  let primaryStream!: ServerResponse;
+  const captureStream = (request: IncomingMessage, response: ServerResponse) => {
+    if (request.url?.startsWith("/api/watch?")) primaryStream = response;
+  };
+  streamingDemo.server.on("request", captureStream);
   try {
     const created = await page.request.post(`${streamingDemoUrl}/api/conversations`, { data: { ownership: { kind: "ownerless" } } });
     expect(created.status()).toBe(201);
     const conversation = await created.json();
     const url = `${streamingDemoUrl}/?conversation=${conversation.id}`;
-    await Promise.all([page.goto(url), otherPage.goto(url)]);
+    await page.goto(url);
     await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
+    streamingDemo.server.off("request", captureStream);
+    expect(primaryStream).toBeDefined();
+    await otherPage.goto(url);
     await expect(otherPage.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
 
     await page.getByRole("textbox", { name: "Message", exact: true }).fill("/long shared streaming conversation");
@@ -284,8 +300,8 @@ test("independent browsers converge after a streaming connection goes offline an
     expect(await firstOutput.innerText()).not.toContain("Try /tool");
     await expect(page.getByRole("button", { name: "Stop response", exact: true })).toBeVisible();
     await context.setOffline(true);
-    // Cut the existing SSE too, so this exercises recovery rather than uninterrupted delivery.
-    await session.send("Page.stopLoading");
+    // Drop the server connection; a browser navigation abort is terminal to EventSource.
+    primaryStream.destroy();
     expect(await page.evaluate(() => navigator.onLine)).toBe(false);
 
     await expect(otherOutput).toContainText("Try /tool");
@@ -318,7 +334,7 @@ test("independent browsers converge after a streaming connection goes offline an
     }
   } finally {
     await context.setOffline(false);
-    await session.detach();
+    streamingDemo.server.off("request", captureStream);
     await otherContext.close();
   }
 });
@@ -335,19 +351,42 @@ test("new drafts do not persist empty native conversations", async ({ page, demo
   expect(after.items).toHaveLength(before.items.length + 1);
 });
 
-test("a title changed by another browser reaches the open thread and directory", async ({ page, browser, demoUrl }) => {
-  await page.goto(demoUrl);
-  const title = await createConversation(page, "Observe native metadata");
+test("external title updates preserve loaded pages until the directory is explicitly refreshed", async ({ page, browser, demoUrl }) => {
+  const created = await Promise.all(Array.from({ length: 51 }, async () => {
+    const response = await page.request.post(`${demoUrl}/api/conversations`, { data: { ownership: { kind: "ownerless" } } });
+    expect(response.status()).toBe(201);
+    return (await response.json()).id as number;
+  }));
+  created.sort((left, right) => left - right);
+  const title = `Conversation ${created.at(-1)}`;
+  const olderTitle = `Conversation ${created[0]}`;
+  const url = `${demoUrl}/?conversation=${created.at(-1)}`;
+  await page.goto(url);
   const other = await browser.newContext();
   try {
     const observer = await other.newPage();
-    await observer.goto(page.url());
+    let directoryRequests = 0;
+    observer.on("request", (request) => {
+      if (request.method() === "GET" && new URL(request.url()).pathname === "/api/conversations") directoryRequests++;
+    });
+    await observer.goto(url);
     await expect(observer.getByRole("heading", { level: 1 })).toHaveText(title);
+    await expect(observer.locator(".conversation-trigger").first()).toHaveText(title);
+    await expect(observer.getByRole("button", { name: olderTitle, exact: true })).toHaveCount(0);
+    await observer.getByRole("button", { name: "Load more conversations", exact: true }).click();
+    await expect(observer.getByRole("button", { name: olderTitle, exact: true })).toBeVisible();
+    const loadedCount = await observer.locator(".conversation-trigger").count();
+    const requestsBeforeRename = directoryRequests;
     await page.getByLabel(`Actions for ${title}`, { exact: true }).click();
     await page.getByRole("button", { name: "Rename", exact: true }).click();
     await page.getByRole("textbox", { name: "Conversation title", exact: true }).fill("Observed from another browser");
     await page.getByRole("button", { name: "Save title", exact: true }).click();
     await expect(observer.getByRole("heading", { level: 1 })).toHaveText("Observed from another browser");
+    await expect(observer.getByRole("button", { name: title, exact: true })).toBeVisible();
+    await expect(observer.getByRole("button", { name: olderTitle, exact: true })).toBeVisible();
+    await expect(observer.locator(".conversation-trigger")).toHaveCount(loadedCount);
+    expect(directoryRequests).toBe(requestsBeforeRename);
+    await observer.getByRole("button", { name: "Refresh conversations", exact: true }).click();
     await expect(observer.getByRole("button", { name: "Observed from another browser", exact: true })).toBeVisible();
   } finally {
     await other.close();
@@ -372,4 +411,72 @@ test("the composer queues and steers native submissions during a run", async ({ 
   const history = await (await page.request.get(`${demoUrl}/api/conversations/${id}/entries`)).json();
   expect(JSON.stringify(history)).toContain("Steer the active native run");
   expect(JSON.stringify(history)).not.toContain("Withdraw this queued follow-up");
+});
+
+test("only the selected conversation is observed while unobserved native work completes", async ({ page, demoUrl }) => {
+  const created = await page.request.post(`${demoUrl}/api/conversations`, { data: { ownership: { kind: "ownerless" } } });
+  expect(created.status()).toBe(201);
+  const otherId: number = (await created.json()).id;
+  let subscriptions: Array<{ id: number; kind: string }> = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/watch") subscriptions = JSON.parse(url.searchParams.get("subscriptions")!);
+  });
+  const watched = () => subscriptions.map(({ id, kind }) => `${kind}:${id}`).sort();
+
+  await page.goto(demoUrl);
+  const title = await createConversation(page, "/slow");
+  const id = Number(title.split(" ")[1]);
+  await expect(page.locator(".tool-result")).toContainText("Starting slow native tool");
+  await expect.poll(watched).toEqual([`conversation:${id}`, `metadata:${id}`]);
+
+  await page.getByRole("button", { name: `Conversation ${otherId}`, exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Conversation ${otherId}`);
+  await expect.poll(watched).toEqual([`conversation:${otherId}`, `metadata:${otherId}`]);
+  await expect.poll(async () => (await (await page.request.get(`${demoUrl}/api/conversations/${id}`)).json()).docs["pi.live"].run).toBeUndefined();
+  const history = await (await page.request.get(`${demoUrl}/api/conversations/${id}/entries`)).json();
+  expect(JSON.stringify(history)).toContain("Slow tool finished");
+
+  await page.getByRole("button", { name: title, exact: true }).click();
+  await expect.poll(watched).toEqual([`conversation:${id}`, `metadata:${id}`]);
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Slow tool finished");
+  await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
+});
+
+test("busy attachment sends wait while text follow-ups remain available", async ({ page, demoUrl }) => {
+  await page.goto(demoUrl);
+  const title = await createConversation(page, "/approval");
+  const id = title.split(" ")[1];
+  await expect(page.getByRole("heading", { name: "Pi needs your input", exact: true })).toBeVisible();
+  let sendRequests = 0;
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && (path === "/api/files" || path === `/api/conversations/${id}/submit`)) sendRequests++;
+  });
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Attach files", exact: true }).click();
+  await (await chooser).setFiles({ name: "later.txt", mimeType: "text/plain", buffer: Buffer.from("Wait for the active run to finish.") });
+  const message = page.getByRole("textbox", { name: "Message", exact: true });
+  await message.fill("Keep this attached draft until Pi is idle");
+  await expect(page.getByText("later.txt", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Steer", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Queue follow-up", exact: true })).toBeDisabled();
+  await message.press("Enter");
+  await expect(message).toHaveValue("Keep this attached draft until Pi is idle");
+  expect((await (await page.request.get(`${demoUrl}/api/conversations/${id}`)).json()).docs["pi.inbox"].items).toEqual([]);
+  expect(sendRequests).toBe(0);
+
+  await page.getByRole("button", { name: "Remove attachment", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Queue follow-up", exact: true })).toBeEnabled();
+  await message.fill("Withdraw this text follow-up");
+  await page.getByRole("button", { name: "Queue follow-up", exact: true }).click();
+  await expect.poll(async () => (await (await page.request.get(`${demoUrl}/api/conversations/${id}`)).json()).docs["pi.inbox"].items.map((item: { mode: string }) => item.mode)).toEqual(["followUp"]);
+  await page.getByText("Conversation controls", { exact: true }).click();
+  await page.getByText("Execution, inbox and usage", { exact: true }).click();
+  await page.getByRole("button", { name: /^Withdraw submission/ }).click();
+  await expect.poll(async () => (await (await page.request.get(`${demoUrl}/api/conversations/${id}`)).json()).docs["pi.inbox"].items).toEqual([]);
+  await expect(page.locator('[data-role="user"]')).not.toContainText("Withdraw this text follow-up");
+  await page.getByRole("textbox", { name: "Response", exact: true }).fill("Continue without the withdrawn follow-up");
+  await page.getByRole("button", { name: "Send response", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
 });

@@ -29,9 +29,11 @@ it("pages native conversations and reads metadata only for the requested page", 
   expect(first.threads).toEqual([{ remoteId: "2", title: "Title 2", status: "regular" }]);
   expect(listMetadata).toHaveBeenNthCalledWith(1, [2]);
   expect(list).toHaveBeenCalledTimes(1);
+  expect(list).toHaveBeenNthCalledWith(1, { order: "descending" }, 1, undefined);
   const second = await adapter.list({ after: first.nextCursor });
   expect(second.threads.map((item) => item.remoteId)).toEqual(["8"]);
   expect(listMetadata).toHaveBeenNthCalledWith(2, [8]);
+  expect(list).toHaveBeenNthCalledWith(2, { order: "descending" }, 1, { after: 2 });
   expect(create).not.toHaveBeenCalled();
   expect(await adapter.initialize("draft-id")).toEqual({ remoteId: "9" });
   expect(create).toHaveBeenCalledOnce();

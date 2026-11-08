@@ -42,6 +42,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
+  request.setEncoding("utf8");
   let text = "";
   for await (const chunk of request) text += chunk;
   if (text.length === 0) return {};

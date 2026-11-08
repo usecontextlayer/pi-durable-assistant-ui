@@ -38,7 +38,7 @@ export function HumanInputTool(props: ToolCallMessagePartProps) {
   );
 }
 
-function ToolResult({ label, toolName, args, result, status, isError, modelContent }: ToolCallMessagePartProps & { label?: string }) {
+function ToolResult({ label, toolName, args, result, artifact, status, isError, modelContent }: ToolCallMessagePartProps & { label?: string }) {
   const files = modelContent?.filter((part) => part.type === "file") ?? [];
   const text = modelContent?.filter((part) => part.type === "text").map((part) => part.text).join("\n");
   const output = result ?? text;
@@ -56,6 +56,12 @@ function ToolResult({ label, toolName, args, result, status, isError, modelConte
           <>
             <h3>Result</h3>
             <pre>{typeof output === "string" ? output : JSON.stringify(output, null, 2)}</pre>
+          </>
+        ) : null}
+        {artifact != null ? (
+          <>
+            <h3>Details</h3>
+            <pre>{typeof artifact === "string" ? artifact : JSON.stringify(artifact, null, 2)}</pre>
           </>
         ) : null}
         {files.map((part, index) => {

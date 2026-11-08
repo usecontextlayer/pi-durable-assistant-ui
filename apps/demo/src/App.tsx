@@ -125,7 +125,7 @@ function ChatApp() {
             {threads.isLoading && threads.threadIds.length === 0 ? (
               <p className="sidebar-note" role="status">Loading conversations…</p>
             ) : null}
-            <ThreadListPrimitive.Items components={{ ThreadListItem: ConversationItem }} />
+            <ThreadListPrimitive.Items>{() => <ConversationItem />}</ThreadListPrimitive.Items>
             {!threads.isLoading && threads.threadIds.length === 0 ? (
               <p className="sidebar-note">Your conversations will appear here.</p>
             ) : null}
@@ -275,6 +275,9 @@ function Composer() {
     <ComposerPrimitive.Root className="composer">
       <ComposerPrimitive.AttachmentDropzone className="composer-dropzone">
         <ComposerPrimitive.Attachments components={{ Attachment: ComposerAttachment }} />
+        <AuiIf condition={(s) => s.thread.isRunning && s.composer.attachments.length > 0}>
+          <p className="sidebar-note" role="status">Send attachments after the current response finishes.</p>
+        </AuiIf>
         <ComposerPrimitive.Input
           className="composer-input"
           aria-label="Message"
@@ -415,6 +418,9 @@ const messageParts = {
   data: { by_name: { "pi-context": ContextNotice } },
 };
 
-function ContextNotice({ data }: DataMessagePartProps<{ kind: string }>) {
-  return <p className="context-notice">{data.kind === "pi.reset" ? "Conversation context reset" : "Conversation context compacted"}</p>;
+function ContextNotice({ data }: DataMessagePartProps<{ kind: string; text: string }>) {
+  return <div className="context-notice">
+    <p>{data.kind === "pi.reset" ? "Conversation context reset" : "Conversation context compacted"}</p>
+    {data.text ? <p style={{ whiteSpace: "pre-wrap" }}>{data.text}</p> : null}
+  </div>;
 }

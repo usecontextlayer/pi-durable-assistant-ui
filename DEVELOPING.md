@@ -13,6 +13,8 @@ Open the URL printed by the server, normally http://127.0.0.1:5173. Vite and the
 
 Conversations persist in `.data/pi.sqlite`; native file and shell tools use `.data/workspace`. The browser's `?conversation=` query selects a native conversation. Reloading or closing the browser releases observation while the agent continues running.
 
+On opening an existing database, the demo initializes missing metadata documents before resuming tasks. Supported title, feedback and suggestion values from the earlier `demo.presentation` document are copied into `demo.metadata`, and copied legacy documents are retired. Existing current metadata takes precedence. New conversations and forks initialize metadata through Pi's native creation hook.
+
 The local host exposes native execution capabilities, including file and shell tools. Keep it bound to loopback as configured.
 
 ## Providers and configuration

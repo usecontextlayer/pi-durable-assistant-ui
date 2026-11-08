@@ -1,13 +1,13 @@
 # Feature coverage
 
-The integration uses Pi Durable/AI/Chord 1.5.0 and Assistant UI 0.15.32. Pi owns persistent execution, records and identifiers. Metadata extensions also use Pi's own documents. Assistant UI owns the remote thread list, with native state scoped to each conversation. Verification covers type checks, production build, native/unit tests and all 11 browser workflows on Assistant UI 0.15.32 and 0.15.33. Real-Haiku evidence comes from an earlier source revision.
+The integration uses Pi Durable/AI/Chord 1.5.0 and Assistant UI 0.15.32. Pi owns persistent execution, records and identifiers. Metadata extensions also use Pi's own documents. Assistant UI owns the remote thread list, with native state scoped to each conversation. Verification covers type checks, production build, 59 native/unit tests and all 13 browser workflows on Assistant UI 0.15.32. An isolated 0.15.33 check passes type checks, production build, all 59 native/unit tests and the three title-pagination, selected-observation and busy-attachment browser workflows. Real-Haiku evidence comes from an earlier source revision.
 
 | Capability | Native owner and integration | Evidence / actual boundary |
 | --- | --- | --- |
 | Create, list, select, reopen | Native conversation IDs, lazy draft initialization, paged RemoteThreadListRuntime | Native conversation tests and browser create/switch/reload workflow |
 | Text, Markdown, reasoning, live state | Native view/Chord operations → ConversationTranscript → ExternalStoreRuntime | Projection tests, actual browser streaming, real Haiku conversation |
 | Submissions and exact answers | Native submission status and answer entry | Conversation integration tests; native request IDs retained |
-| Follow-up, steering, continuation | Native submit policies and inbox | Native tests and Assistant UI composer native follow-up/steer controls; continue control |
+| Follow-up, steering, continuation | Native submit policies and inbox | Text follow-up/steer controls during execution; attached sends wait until idle; continue control |
 | Withdraw versus cancel | Native submission withdrawal and conversation abort | Separate tests prove the different outcomes; UI exposes both |
 | Browser disconnect/reconnect | Observer lifetime independent of Pi execution | Two-browser test cuts an active SSE connection and blocks reconnects; the other browser receives the answer, then the disconnected browser catches up automatically with the same native entry ID and no duplicate rows |
 | Multiple browser sessions | Independent watches of the same native conversation | Two isolated Chromium contexts receive partial output, preserve execution when one disconnects, and receive submissions from either browser |
@@ -31,7 +31,7 @@ The integration uses Pi Durable/AI/Chord 1.5.0 and Assistant UI 0.15.32. Pi owns
 | Real-model operation | Native Anthropic provider, Haiku-only catalog | Live Haiku response and browser edited retry completed with exact native outcomes |
 | Independent host consumption | Structural PiDurableClient; separately built package | Same conversation-scoped integration runs over HTTP/SSE and a direct native binding; no demo import in the adapter |
 
-Mounted conversation watches synchronize messages/execution and native metadata across browsers. A changed observed title reloads Assistant UI's directory. The directory is paged, and the batch metadata read is limited to that page. New conversations created by another client appear on explicit directory refresh; no all-conversation subscription is claimed.
+Only the selected conversation holds live message/execution and metadata watches in each browser. Inactive conversations continue executing in Pi and catch up when selected again. The directory is paged newest-created first, with batch metadata limited to that page. External title changes and new conversations appear in the sidebar on explicit directory refresh, so incoming metadata does not discard loaded pages. No all-conversation subscription is claimed.
 
 ## Deliberate semantic boundaries
 

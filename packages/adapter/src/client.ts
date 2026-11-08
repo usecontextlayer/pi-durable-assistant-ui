@@ -127,6 +127,9 @@ export function createHttpPiDurableClient(options: HttpPiDurableClientOptions = 
     for (const subscription of subscriptions.values()) subscription.connection("connecting");
     const connection = openEvents(url("/watch", { subscriptions: [...subscriptions.values()].map((subscription) => subscription.request()) }));
     source = connection;
+    connection.onopen = () => {
+      for (const subscription of subscriptions.values()) subscription.connection("connected");
+    };
     connection.onmessage = (event: MessageEvent<string>) => {
       try {
         const { subscriptionId, frame } = JSON.parse(event.data) as HttpPiDurableWatchEnvelope;
@@ -137,6 +140,10 @@ export function createHttpPiDurableClient(options: HttpPiDurableClientOptions = 
       }
     };
     connection.onerror = () => {
+      if (connection.readyState === connection.CLOSED) {
+        for (const subscription of subscriptions.values()) subscription.receive({ type: "end", kind: "failed", error: "Pi watch connection closed." });
+        return;
+      }
       connection.close();
       for (const subscription of subscriptions.values()) subscription.connection("reconnecting");
       if (subscriptions.size > 0) retry = setTimeout(connect, options.reconnectDelayMs ?? 500);
@@ -238,7 +245,6 @@ export function createHttpPiDurableClient(options: HttpPiDurableClientOptions = 
             } else {
               observation.advance({ kind: "value", value, ops: frame.type === "ops" ? frame.ops : [["r", value as JsonValue]], retired: false }, BACKGROUND_CONTEXT);
             }
-            watchOptions.onConnection?.("connected");
           } catch (error) {
             dispose();
             watchOptions.onConnection?.("closed");

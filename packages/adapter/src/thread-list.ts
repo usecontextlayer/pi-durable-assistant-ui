@@ -17,7 +17,7 @@ export function createPiDurableThreadListAdapter(client: PiDurableClient, pageSi
   });
   return {
     async list({ after } = {}) {
-      const page = await client.listConversations({}, pageSize, after ? JSON.parse(after) as Cursor : undefined);
+      const page = await client.listConversations({ order: "descending" }, pageSize, after ? JSON.parse(after) as Cursor : undefined);
       const details = client.listMetadata ? await client.listMetadata(page.items.map((item) => item.id)) : undefined;
       const threads = await Promise.all(page.items.map(async ({ id }) => metadata(id, details?.[String(id)] ?? await client.getMetadata?.(id))));
       return { threads, ...(page.next ? { nextCursor: JSON.stringify(page.next) } : {}) };
