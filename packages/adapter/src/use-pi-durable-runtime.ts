@@ -100,7 +100,7 @@ function usePiDurableThreadRuntime({ client, pageSize, attachments, speech, dict
     isLoading: state.isLoading,
     hasEarlier: state.view?.items[0]?.kind === "earlier",
     onLoadEarlier: conversation?.loadEarlier,
-    onRefetchThread: conversation ? async () => { conversation.reload(); } : undefined,
+    onRefetchThread: conversation?.reload,
     onNew: send,
     onCancel: conversation && client.abort ? conversation.cancel : undefined,
     onEdit: conversation && client.fork ? async (message) => { const fork = await conversation.edit(message); await aui.threads().switchToThread(String(fork.id)); } : undefined,

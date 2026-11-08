@@ -25,6 +25,57 @@ test("native metadata changes reach independently connected HTTP observers witho
   }
 });
 
+test("reload waits for initial history and metadata, then continues observing", async ({ dataDirectory }) => {
+  const host = await startApiServer(dataDirectory);
+  const record = await host.client.createConversation();
+  let releaseMetadata!: () => void;
+  const metadataReady = new Promise<void>((resolve) => { releaseMetadata = resolve; });
+  const conversation = new PiDurableConversation({
+    ...host.client,
+    watchMetadata: async (id, signal) => {
+      const watch = await host.client.watchMetadata!(id, signal);
+      await metadataReady;
+      return watch;
+    },
+  }, record.id);
+  try {
+    await host.client.updateMetadata(record.id, { title: "Before reload" });
+    let reloaded = false;
+    const reload = conversation.reload().then(() => { reloaded = true; });
+    await expect.poll(() => Boolean(conversation.getSnapshot().view)).toBe(true);
+    expect(reloaded).toBe(false);
+
+    releaseMetadata();
+    await reload;
+    expect(conversation.getSnapshot().metadata.title).toBe("Before reload");
+    expect(conversation.getSnapshot().isLoading).toBe(false);
+    await host.client.updateMetadata(record.id, { title: "After reload" });
+    await expect.poll(() => conversation.getSnapshot().metadata.title).toBe("After reload");
+
+    conversation.stop();
+    await host.client.updateMetadata(record.id, { title: "While disconnected" });
+    await conversation.reload();
+    expect(conversation.getSnapshot().metadata.title).toBe("While disconnected");
+  } finally {
+    releaseMetadata();
+    conversation.stop();
+    await host.close();
+  }
+});
+
+test("reload rejects native acquisition failures and exposes the error in state", async ({ dataDirectory }) => {
+  const host = await startApiServer(dataDirectory);
+  const conversation = new PiDurableConversation(host.client, 999999 as ConversationId);
+  try {
+    await expect(conversation.reload()).rejects.toThrow("Conversation not found.");
+    expect(conversation.getSnapshot().error?.message).toBe("Conversation not found.");
+    expect(conversation.getSnapshot().isLoading).toBe(false);
+  } finally {
+    conversation.stop();
+    await host.close();
+  }
+});
+
 test("unknown HTTP watch acquisition rejects and native source closure ends the logical watch", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory);
   try {

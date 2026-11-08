@@ -104,7 +104,7 @@ function ChatApp() {
     const created = await conversation.forkAt(entryId);
     selectConversation(created.id);
   };
-  const retry = () => { void aui.threads().reloadMainThread(); };
+  const retry = () => { void aui.threads().reloadMainThread().catch((error) => conversation?.reportError(error)); };
 
   return (
     <div className="app-shell">

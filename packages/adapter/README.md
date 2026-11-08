@@ -39,6 +39,8 @@ Inside `AssistantRuntimeProvider`, `usePiDurable()` reads the current thread's `
 
 For direct non-React observation, construct `new PiDurableConversation(client, id, pageSize)`, subscribe with `subscribe`/`getSnapshot`, then call `start` and `stop`. It has no selection method or global directory. Edit and regeneration of committed answers return a native fork and target both the context write and continuation explicitly at that fork; the React integration then asks Assistant UI to select it. Retrying a synthetic run-failure message uses native continuation in the existing conversation.
 
+`await runtime.threads.reloadMainThread()` refreshes the selected conversation in place. It resolves after the initial native history and optional metadata have been reacquired, while their live observations continue, and rejects if acquisition fails. Direct observers can await `conversation.reload()` for the same behavior; failures also appear in `state.error`.
+
 ## Host contract and observation
 
 Implement the structural `PiDurableClient` or use `createHttpPiDurableClient` with the demo protocol. Installing the adapter does not install server routes. Optional client methods describe host extensions; titles, feedback, suggestions, uploads and human input require the corresponding host implementation.

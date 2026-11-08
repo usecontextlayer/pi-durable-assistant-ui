@@ -41,7 +41,10 @@ export class PiDurableConversation {
   };
 
   start = (): void => {
-    if (this.#controller) return;
+    if (!this.#controller) void this.#connect();
+  };
+
+  #connect(): Promise<void> {
     const controller = new AbortController();
     this.#controller = controller;
     this.#set({ isLoading: !this.#state.view, error: undefined });
@@ -52,10 +55,11 @@ export class PiDurableConversation {
         if (change.kind === "value") await accept(change.value);
         else this.reportError(change.error);
       });
-      const end = await watch.closed;
-      if (!controller.signal.aborted) this.#ended(end);
+      void watch.closed.then((end) => {
+        if (!controller.signal.aborted) this.#ended(end);
+      });
     };
-    void observe(() => this.client.watch(this.id, {
+    const observations = [observe(() => this.client.watch(this.id, {
       signal: controller.signal,
       window: () => this.transcript.resume,
       onConnection: (connection) => { if (!controller.signal.aborted) this.#set({ connection }); },
@@ -68,13 +72,16 @@ export class PiDurableConversation {
         this.#set({ view: await this.transcript.fillGap(gap, context) });
         gap = this.#state.view?.items.find((item) => item.kind === "gap");
       }
-    }).catch((error) => { if (!controller.signal.aborted) this.reportError(error); });
+    })];
     if (this.client.watchMetadata) {
-      void observe(() => this.client.watchMetadata!(this.id, controller.signal), (metadata) => {
+      observations.push(observe(() => this.client.watchMetadata!(this.id, controller.signal), (metadata) => {
         if (!controller.signal.aborted) this.#set({ metadata });
-      }).catch((error) => { if (!controller.signal.aborted) this.reportError(error); });
+      }));
     }
-  };
+    const ready = Promise.all(observations).then(() => {});
+    void ready.catch((error) => { if (!controller.signal.aborted) this.reportError(error); });
+    return ready;
+  }
 
   #ended(end: WatchEnd) {
     this.#set({ connection: "closed", isLoading: false });
@@ -86,7 +93,7 @@ export class PiDurableConversation {
     this.#controller = undefined;
   };
 
-  reload = (): void => { this.stop(); this.start(); };
+  reload = (): Promise<void> => { this.stop(); return this.#connect(); };
   submit = (draft: SubmissionDraft) => this.client.submit(this.id, draft);
   continue = () => this.submit({ type: "continue" });
   steer = (content: Extract<SubmissionDraft, { type: "input" }>["content"]) => this.submit({ type: "input", content, whenBusy: "steer" });
