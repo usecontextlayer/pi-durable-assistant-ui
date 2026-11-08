@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T01:09:53.281844Z",
+  "title": "Design System: Pi Durable Assistant UI",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Primary charcoal",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "primary-hover": {
+        "role": "primary",
+        "displayName": "Hovered charcoal",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "White surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "sidebar": {
+        "role": "neutral",
+        "displayName": "Sidebar white",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Secondary text",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Panel border",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Control border",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "navigation-hover": {
+        "role": "neutral",
+        "displayName": "Navigation hover",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "navigation-active": {
+        "role": "neutral",
+        "displayName": "Active conversation",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "focus": {
+        "role": "neutral",
+        "displayName": "Focus gray",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "placeholder": {
+        "role": "neutral",
+        "displayName": "Placeholder gray",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "link": {
+        "role": "semantic",
+        "displayName": "Link blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.1376 260.45)",
+          "oklch(26.43% 0.1376 260.45)",
+          "oklch(37.86% 0.1376 260.45)",
+          "oklch(49.29% 0.1376 260.45)",
+          "oklch(60.71% 0.1376 260.45)",
+          "oklch(72.14% 0.1376 260.45)",
+          "oklch(83.57% 0.1376 260.45)",
+          "oklch(95.00% 0.1376 260.45)"
+        ]
+      },
+      "error": {
+        "role": "semantic",
+        "displayName": "Error red",
+        "tonalRamp": [
+          "oklch(15.00% 0.1639 29.60)",
+          "oklch(26.43% 0.1639 29.60)",
+          "oklch(37.86% 0.1639 29.60)",
+          "oklch(49.29% 0.1639 29.60)",
+          "oklch(60.71% 0.1639 29.60)",
+          "oklch(72.14% 0.1639 29.60)",
+          "oklch(83.57% 0.1639 29.60)",
+          "oklch(95.00% 0.1639 29.60)"
+        ]
+      },
+      "notice": {
+        "role": "semantic",
+        "displayName": "Notice green",
+        "tonalRamp": [
+          "oklch(15.00% 0.0725 154.70)",
+          "oklch(26.43% 0.0725 154.70)",
+          "oklch(37.86% 0.0725 154.70)",
+          "oklch(49.29% 0.0725 154.70)",
+          "oklch(60.71% 0.0725 154.70)",
+          "oklch(72.14% 0.0725 154.70)",
+          "oklch(83.57% 0.0725 154.70)",
+          "oklch(95.00% 0.0725 154.70)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Empty-state headline",
+        "purpose": "The opening question in an empty conversation."
+      },
+      "title": {
+        "displayName": "Conversation title",
+        "purpose": "The desktop header; compacted to 13px on mobile."
+      },
+      "body": {
+        "displayName": "Conversation body",
+        "purpose": "Readable message prose using the system sans-serif stack."
+      },
+      "label": {
+        "displayName": "Control label",
+        "purpose": "Supporting labels and compact text actions."
+      },
+      "code": {
+        "displayName": "Code and tool output",
+        "purpose": "Monospace code blocks and tool details."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "sidebar-slide",
+        "value": "transform 160ms ease-out",
+        "purpose": "Mobile sidebar movement; transition is none under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Send actions use a filled charcoal button.",
+      "html": "<button class=\"ds-send\" type=\"button\">Send</button>",
+      "css": ".ds-send { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-send:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-send:disabled { cursor: not-allowed; opacity: 0.5; } .ds-send { border: 0; border-radius: 8px; background: #171717; color: #fff; padding: 8px 16px; font-size: 13px; font-weight: 550; } .ds-send:hover:not(:disabled) { background: #383838; }"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Native conversation actions use a light bordered button.",
+      "html": "<button class=\"ds-secondary\" type=\"button\">Save configuration</button>",
+      "css": ".ds-secondary { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-secondary:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-secondary:disabled { cursor: not-allowed; opacity: 0.5; } .ds-secondary { border: 1px solid #d8d8d8; border-radius: 7px; padding: 7px 11px; background: #fff; color: #171717; font-size: 12px; } .ds-secondary:hover:not(:disabled) { background: var(--muted); }"
+    },
+    {
+      "name": "Text action",
+      "kind": "button",
+      "refersTo": "button-text",
+      "description": "Message actions remain compact and visually secondary.",
+      "html": "<button class=\"ds-text\" type=\"button\">Copy</button>",
+      "css": ".ds-text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-text:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-text:disabled { cursor: not-allowed; opacity: 0.5; } .ds-text { border: 0; padding: 3px 0; background: transparent; color: var(--secondary); font-size: 12px; } .ds-text:hover { color: #171717; text-decoration: underline; text-underline-offset: 3px; }"
+    },
+    {
+      "name": "Native field",
+      "kind": "input",
+      "refersTo": "native-field",
+      "description": "Configuration fields retain visible labels and browser form behavior.",
+      "html": "<label class=\"ds-field-label\"><span>Working directory</span><input class=\"ds-field\" placeholder=\"Host default\" /></label>",
+      "css": ".ds-field-label { display: flex; flex-direction: column; gap: 6px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-size: 13px; } .ds-field-label > span { color: var(--secondary); font-size: 12px; } .ds-field { min-width: 0; border: 1px solid #d8d8d8; border-radius: 6px; padding: 8px 10px; background: #fff; color: #171717; font: inherit; } .ds-field::placeholder { color: #737373; } .ds-field:focus-visible { outline: 2px solid #525252; outline-offset: 2px; }"
+    },
+    {
+      "name": "Conversation navigation",
+      "kind": "nav",
+      "refersTo": "conversation-item",
+      "description": "Conversation rows use tonal hover and selected states.",
+      "html": "<nav class=\"ds-navigation\" aria-label=\"Conversations\"><button class=\"ds-conversation\" type=\"button\">Conversation 1</button><button class=\"ds-conversation ds-conversation-active\" type=\"button\">Conversation 2</button></nav>",
+      "css": ".ds-conversation { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-conversation:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-conversation:disabled { cursor: not-allowed; opacity: 0.5; } .ds-navigation { background: #fafafa; padding: 8px; } .ds-conversation { display: block; width: 100%; overflow: hidden; padding: 11px 12px; border: 0; border-radius: 8px; text-align: left; text-overflow: ellipsis; white-space: nowrap; background: transparent; color: #171717; font-size: 14px; } .ds-conversation:hover { background: #eee; } .ds-conversation-active { background: #e9e9e9; font-weight: 550; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "refersTo": "composer",
+      "description": "The active textarea uses the enclosing composer border as its focus indicator.",
+      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" aria-label=\"Message\" placeholder=\"Message Pi…\" rows=\"1\"></textarea><div class=\"ds-composer-actions\"><button class=\"ds-composer-attach\" type=\"button\">Attach files</button><button class=\"ds-composer-send\" type=\"button\">Send</button></div></div>",
+      "css": ".ds-composer-send { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-composer-send:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-composer-send:disabled { cursor: not-allowed; opacity: 0.5; } .ds-composer-attach { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-composer-attach:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-composer-attach:disabled { cursor: not-allowed; opacity: 0.5; } .ds-composer { padding: 15px 16px 12px; border: 1px solid #d8d8d8; border-radius: 16px; background: #fff; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; } .ds-composer:focus-within { border-color: #525252; } .ds-composer-input { display: block; width: 100%; min-height: 28px; max-height: 180px; resize: none; border: 0; outline: 0; background: transparent; color: #171717; caret-color: #171717; font: inherit; font-size: 15px; line-height: 1.6; } .ds-composer-input:focus-visible { outline: none; } .ds-composer-input::placeholder { color: #737373; } .ds-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; } .ds-composer-attach { border: 0; padding: 3px 0; background: transparent; color: var(--secondary); font-size: 12px; } .ds-composer-attach:hover { color: #171717; text-decoration: underline; text-underline-offset: 3px; } .ds-composer-send { border: 0; border-radius: 8px; background: #171717; color: #fff; padding: 8px 16px; font-size: 13px; font-weight: 550; } .ds-composer-send:hover:not(:disabled) { background: #383838; } @media (max-width: 760px) { .ds-composer { padding: 12px 13px 10px; } }"
+    },
+    {
+      "name": "Reasoning disclosure",
+      "kind": "custom",
+      "refersTo": "disclosure",
+      "description": "Native details keep supporting content available within the thread.",
+      "html": "<details class=\"ds-disclosure\"><summary>Reasoning</summary><div class=\"ds-reasoning\">Reasoning content appears here.</div></details>",
+      "css": ".ds-disclosure { margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; color: #505050; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-size: 13px; } .ds-disclosure summary { padding: 10px 14px; cursor: pointer; } .ds-disclosure summary:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-reasoning { padding: 0 14px 14px; white-space: pre-wrap; }"
+    },
+    {
+      "name": "User message",
+      "kind": "card",
+      "refersTo": "user-message",
+      "description": "A muted bubble distinguishes the user message from assistant prose.",
+      "html": "<div class=\"ds-user-message\"><div class=\"ds-user-label\">You</div><div class=\"ds-user-content\">Help me plan a small task.</div></div>",
+      "css": ".ds-user-message { margin: 0 0 30px 15%; min-width: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; color: #171717; } .ds-user-label { margin-bottom: 10px; text-align: right; font-size: 13px; font-weight: 650; } .ds-user-content { padding: 14px 18px; border-radius: 15px; background: var(--muted); font-size: 15px; line-height: 1.75; overflow-wrap: anywhere; } @media (max-width: 760px) { .ds-user-message { margin-left: 8%; } }"
+    },
+    {
+      "name": "Human input panel",
+      "kind": "card",
+      "refersTo": "human-input",
+      "description": "Agent questions remain inline with a labeled response field.",
+      "html": "<section class=\"ds-human-input\" aria-label=\"Agent question\"><h3>Pi needs your input</h3><p>Which task should I work on?</p><label><span>Response</span><textarea rows=\"3\" required></textarea></label><button type=\"button\">Send response</button></section>",
+      "css": ".ds-human-input button { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-human-input button:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-human-input button:disabled { cursor: not-allowed; opacity: 0.5; } .ds-human-input { margin: 12px 0; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: #fafafa; color: #171717; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-size: 15px; line-height: 1.75; } .ds-human-input h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; } .ds-human-input p { margin: 0 0 12px; } .ds-human-input label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--secondary); } .ds-human-input textarea { resize: vertical; min-height: 85px; border: 1px solid #d8d8d8; border-radius: 7px; padding: 10px; color: #171717; background: #fff; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-size: 12px; line-height: 1.5; } .ds-human-input textarea:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-human-input button { margin-top: 10px; border: 0; border-radius: 8px; background: #171717; color: #fff; padding: 8px 16px; font-size: 13px; font-weight: 550; } .ds-human-input button:hover:not(:disabled) { background: #383838; }"
+    },
+    {
+      "name": "Attachment",
+      "kind": "chip",
+      "refersTo": "attachment",
+      "description": "Attachments stay compact with a truncating filename and a remove action.",
+      "html": "<div class=\"ds-attachment\"><span class=\"ds-attachment-name\">notes.txt</span><button class=\"ds-attachment-remove\" type=\"button\" aria-label=\"Remove attachment\">Remove</button></div>",
+      "css": ".ds-attachment-remove { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; cursor: pointer; } .ds-attachment-remove:focus-visible { outline: 2px solid #525252; outline-offset: 3px; } .ds-attachment-remove:disabled { cursor: not-allowed; opacity: 0.5; } .ds-attachment { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; margin: 0 8px 12px 0; padding: 7px 10px 7px 7px; border: 1px solid var(--border); border-radius: 8px; color: #171717; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; font-size: 12px; } .ds-attachment-name { max-width: 160px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .ds-attachment-remove { border: 0; padding: 3px 0; background: transparent; color: var(--secondary); font-size: 12px; } .ds-attachment-remove:hover { color: #171717; text-decoration: underline; text-underline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Standard Assistant UI",
+    "overview": "Preserve the familiar conversation list, thread, and composer selected in [PRODUCT.md](PRODUCT.md). The interface is quiet, compact around controls, and spacious around messages. Native Pi capabilities fit into this chat composition through disclosures and ordinary form controls.\n\nThe implementation in [styles.css](apps/demo/src/styles.css) and the demo components defines the visual system. The tokens here record its reusable values; they are not a separate theme implementation. Functional clarity and predictable browser behavior guide additions.",
+    "keyCharacteristics": [
+      "Grayscale surfaces, dark primary actions, and restrained semantic color.",
+      "A centered conversation column with persistent access to the composer.",
+      "Native disclosures and labeled controls for detailed operations.",
+      "Responsive wrapping, contained overflow, and visible keyboard focus."
+    ],
+    "rules": [],
+    "dos": [
+      "**Do** keep the conversation list, thread, and composer as the primary composition.",
+      "**Do** extend existing Assistant UI primitives and native browser controls with the same neutral styling.",
+      "**Do** keep labels, status text, focus indicators, wrapping, and contained overflow when adding controls."
+    ],
+    "donts": [
+      "**Don't** replace the selected standard chat style with a decorative visual identity.",
+      "**Don't** make color the sole indicator of status or errors.",
+      "**Don't** present deterministic provider responses as real model output."
+    ]
+  }
+}
