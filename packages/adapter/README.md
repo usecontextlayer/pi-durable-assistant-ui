@@ -2,17 +2,17 @@
 
 Render native Pi Durable conversations through Assistant UI. Pi owns durable history, execution, submissions and configuration; Assistant UI owns thread navigation, drafts, initialization and directory pagination.
 
-## Build and consume
-
-From the repository root:
+## Install
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm exec turbo run build --filter=@usecontextlayer/pi-durable-assistant-ui
-pnpm --dir packages/adapter pack
+pnpm add @usecontextlayer/pi-durable-assistant-ui '@assistant-ui/react@^0.15.32' @earendil-works/pi-durable@1.5.0 'react@^19.0.0'
 ```
 
-Install the resulting tarball into your application, together with React 19, `@assistant-ui/react` compatible with `^0.15.32`, and Pi Durable compatible with `^1.5.0`. Pi Durable is a peer because native branded identifiers cross the host boundary. The checkout pins its verification dependencies in pnpm-lock.yaml. The adapter builds as ESM with TypeScript declarations and does not depend on the demo's Node/SQLite host.
+The adapter requires React 19, `@assistant-ui/react` compatible with `^0.15.32`, and Pi Durable compatible with `^1.5.0`. The command pins Pi Durable to the verified 1.5.0 release. Pi Durable is a peer because native branded identifiers cross the host boundary. The checkout pins its verification dependencies in pnpm-lock.yaml. The adapter builds as ESM with TypeScript declarations and does not depend on the demo's Node/SQLite host.
+
+## Connect your UI
+
+The example below assumes your host serves the demo-compatible Pi HTTP/SSE protocol at `/api`. Installing the adapter does not create those routes. Implement the [host contract](#host-contract-and-observation), or use the repository's [local demo](https://github.com/usecontextlayer/pi-durable-assistant-ui#try-the-demo) to try the complete integration.
 
 ```tsx
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
@@ -66,3 +66,15 @@ Pi Durable 1.5.0 has no native queue move/edit, permanent conversation deletion,
 `createPiDurableAttachmentAdapter(client.uploadFile)` uses Assistant UI's attachment lifecycle and returns `CompleteAttachment`. The uploader supplies a name and native Pi input blocks; host storage paths, download URLs and content types remain host concerns. Removing a draft attachment does not delete an uploaded file from the host workspace.
 
 Pass Assistant UI's `speech`, `dictation`, `attachments` and optional `feedback` adapters directly to the runtime hook. Without a feedback override, the native host feedback extension is used when available. Browser speech and dictation use Assistant UI's official adapters and support checks; actual microphone capture and audible playback remain device-dependent and unverified in this project.
+
+## Build from source
+
+From the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm exec turbo run build --filter=@usecontextlayer/pi-durable-assistant-ui
+pnpm --dir packages/adapter pack
+```
+
+Install the resulting tarball into your application with the same peer dependencies listed above.

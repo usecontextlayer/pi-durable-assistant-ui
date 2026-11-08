@@ -3,6 +3,12 @@
   "version": "0.0.0-development",
   "license": "MIT",
   "description": "Assistant UI runtime adapter for Pi Durable conversations",
+  "keywords": [
+    "assistant-ui",
+    "pi-durable",
+    "pi-agent",
+    "react"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/usecontextlayer/pi-durable-assistant-ui.git",
