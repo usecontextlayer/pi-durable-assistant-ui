@@ -1,4 +1,6 @@
 import { applyImmutable, type Op } from "@earendil-works/chord/delta";
+import { Watch, type WatchHandle, type WatchEnd, type JsonValue } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type {
   ConversationCreateOptions,
   ConversationId,
@@ -29,32 +31,50 @@ import type { ConversationMetadata, ConversationMetadataPatch } from "./metadata
 export type SerializedAgentChange = { [K in keyof AgentState]?: AgentState[K] | null };
 export type SerializedConversationCreateOptions = Omit<ConversationCreateOptions, "agent" | "init"> & { agent?: SerializedAgentChange };
 
-export type HttpPiWatchFrame =
-  | { type: "view"; view: ConversationView }
-  | { type: "ops"; ops: readonly Op[] };
+export type HttpPiDurableWatchFrame<T = ConversationView> =
+  | { type: "view"; view: T }
+  | { type: "ops"; ops: readonly Op[] }
+  | { type: "failed"; error: string }
+  | { type: "end"; kind: WatchEnd["kind"]; error?: string };
 
-export type PiConnectionState = "idle" | "connecting" | "connected" | "reconnecting";
+export type HttpPiDurableWatchSubscription = {
+  subscriptionId: number;
+  id: ConversationId;
+  kind: "conversation" | "metadata";
+  window?: ConversationWindow;
+};
 
-export interface PiWatchOptions {
+export type HttpPiDurableWatchEnvelope = { subscriptionId: number; frame: HttpPiDurableWatchFrame<unknown> };
+
+export type PiDurableConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "closed";
+
+export interface PiDurableWatchOptions {
   window?: () => ConversationWindow | undefined;
-  onConnection?: (state: PiConnectionState) => void;
-  onError?: (error: Error) => void;
+  onConnection?: (state: PiDurableConnectionState) => void;
+  signal?: AbortSignal;
 }
 
-export interface PiUploadResult {
+export type PiDurableHumanInputDetails = {
+  type: "human-input";
+  taskId: TaskId;
+  prompt: string;
+} & ({ status: "pending" } | { status: "answered"; response: string });
+
+export interface PiDurableUploadResult {
   name: string;
   content: Exclude<UserInput, string>;
 }
 
 /** The native operations a browser needs, with server execution context already bound. */
-export interface PiClient {
+export interface PiDurableClient {
   listConversations(query?: ConversationQuery, limit?: number, cursor?: Cursor): Promise<Page<ConversationRecord, Cursor>>;
   createConversation(options?: SerializedConversationCreateOptions): Promise<ConversationRecord>;
   getConversationView(id: ConversationId): Promise<ConversationView>;
   entries(id: ConversationId, query: Omit<EntryQuery, "conversationId">, limit: number, cursor?: Cursor, signal?: AbortSignal): Promise<Page<EntryRecord, Cursor>>;
   submit(id: ConversationId, submission: SubmissionDraft): Promise<SubmissionRecord>;
   getSubmission(id: SubmissionId): Promise<SubmissionRecord>;
-  watch(id: ConversationId, onView: (view: ConversationView) => void, options?: PiWatchOptions): () => void;
+  watch(id: ConversationId, options?: PiDurableWatchOptions): Promise<WatchHandle<ConversationView>>;
+  watchMetadata?(id: ConversationId, signal?: AbortSignal): Promise<WatchHandle<ConversationMetadata>>;
   configure?(id: ConversationId, change: SerializedAgentChange): Promise<void>;
   abort?(id: ConversationId, options?: ConversationAbortOptions): Promise<void>;
   abortSubmission?(id: SubmissionId): ReturnType<Harness["abortSubmission"]>;
@@ -62,26 +82,66 @@ export interface PiClient {
   compact?(id: ConversationId, instructions?: string): Promise<TaskId<CompactionResult>>;
   fork?(id: ConversationId, at: EntryId, options?: SerializedConversationCreateOptions): Promise<ConversationRecord>;
   context?(id: ConversationId, at?: EntryId): Promise<ContextView>;
-  uploadFile?(file: File, signal?: AbortSignal): Promise<PiUploadResult>;
+  uploadFile?(file: File, signal?: AbortSignal): Promise<PiDurableUploadResult>;
   respondToHumanInput?(taskId: TaskId, response: string): Promise<void>;
   inspect?(): Promise<HarnessInspection>;
-  listMetadata?(): Promise<Record<string, ConversationMetadata>>;
+  listMetadata?(ids: readonly ConversationId[]): Promise<Record<string, ConversationMetadata>>;
   getMetadata?(id: ConversationId): Promise<ConversationMetadata>;
   updateMetadata?(id: ConversationId, patch: ConversationMetadataPatch): Promise<ConversationMetadata>;
   setFeedback?(id: ConversationId, entryId: EntryId, rating: "positive" | "negative" | null): Promise<ConversationMetadata>;
 }
 
-export interface HttpPiClientOptions {
+export interface HttpPiDurableClientOptions {
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
   eventSource?: (url: string) => EventSource;
   reconnectDelayMs?: number;
 }
 
-export function createHttpPiClient(options: HttpPiClientOptions = {}): Required<PiClient> {
+export function createHttpPiDurableClient(options: HttpPiDurableClientOptions = {}): Required<PiDurableClient> {
   const baseUrl = (options.baseUrl ?? "/api").replace(/\/$/, "");
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   const openEvents = options.eventSource ?? ((url: string) => new EventSource(url));
+
+  const subscriptions = new Map<number, {
+    request: () => HttpPiDurableWatchSubscription;
+    receive: (frame: HttpPiDurableWatchFrame<unknown>) => void;
+    connection: (state: PiDurableConnectionState) => void;
+  }>();
+  let nextSubscriptionId = 0;
+  let source: EventSource | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let connectQueued = false;
+
+  function scheduleConnect() {
+    clearTimeout(retry);
+    if (connectQueued) return;
+    connectQueued = true;
+    queueMicrotask(() => { connectQueued = false; connect(); });
+  }
+
+  function connect() {
+    source?.close();
+    source = undefined;
+    if (subscriptions.size === 0) return;
+    for (const subscription of subscriptions.values()) subscription.connection("connecting");
+    const connection = openEvents(url("/watch", { subscriptions: [...subscriptions.values()].map((subscription) => subscription.request()) }));
+    source = connection;
+    connection.onmessage = (event: MessageEvent<string>) => {
+      try {
+        const { subscriptionId, frame } = JSON.parse(event.data) as HttpPiDurableWatchEnvelope;
+        subscriptions.get(subscriptionId)?.receive(frame);
+      } catch (error) {
+        connection.close();
+        for (const subscription of subscriptions.values()) subscription.receive({ type: "end", kind: "failed", error: error instanceof Error ? error.message : String(error) });
+      }
+    };
+    connection.onerror = () => {
+      connection.close();
+      for (const subscription of subscriptions.values()) subscription.connection("reconnecting");
+      if (subscriptions.size > 0) retry = setTimeout(connect, options.reconnectDelayMs ?? 500);
+    };
+  }
 
   function url(path: string, query: Record<string, unknown> = {}): string {
     const params = new URLSearchParams();
@@ -120,54 +180,78 @@ export function createHttpPiClient(options: HttpPiClientOptions = {}): Required<
     fork: (id, at, forkOptions = { ownership: { kind: "ownerless" } }) => post(`/conversations/${id}/fork`, { at, ...forkOptions }),
     context: (id, at) => request(`/conversations/${id}/context`, undefined, { at }),
     uploadFile: (file, signal) => request("/files", { method: "POST", headers: { "content-type": file.type || "application/octet-stream" }, body: file, signal }, { name: file.name }),
-    respondToHumanInput: async (taskId, response) => { await post(`/interactions/${taskId}`, { response }); },
+    respondToHumanInput: async (taskId, response) => { await post(`/human-input/${taskId}`, { response }); },
     inspect: () => request("/inspect"),
-    listMetadata: () => request("/conversations/metadata"),
+    listMetadata: (ids) => post("/conversations/metadata", { ids }),
     getMetadata: (id) => request(`/conversations/${id}/metadata`),
     updateMetadata: (id, patch) => request(`/conversations/${id}/metadata`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }),
     setFeedback: (id, entryId, rating) => post(`/conversations/${id}/feedback`, { entryId, rating }),
-    watch(id, onView, watchOptions = {}) {
-      let source: EventSource | undefined;
-      let retry: ReturnType<typeof setTimeout> | undefined;
-      let stopped = false;
-      let connectedBefore = false;
+    watch: (id, watchOptions = {}) => openWatch<ConversationView>(id, "conversation", watchOptions),
+    watchMetadata: (id, signal) => openWatch<ConversationMetadata>(id, "metadata", { signal }),
+  };
 
-      function connect() {
-        if (stopped) return;
-        watchOptions.onConnection?.(connectedBefore ? "reconnecting" : "connecting");
-        const connection = openEvents(url(`/conversations/${id}/watch`, { window: watchOptions.window?.() }));
-        source = connection;
-        let view: ConversationView | undefined;
-        connection.onmessage = (event: MessageEvent<string>) => {
-          try {
-            const frame = JSON.parse(event.data) as HttpPiWatchFrame;
-            if (frame.type === "view") view = frame.view;
-            else {
-              if (!view) throw new Error("Pi watch sent changes before its initial view");
-              view = applyImmutable(view, frame.ops);
-            }
-            connectedBefore = true;
-            watchOptions.onConnection?.("connected");
-            onView(view);
-          } catch (cause) {
-            watchOptions.onError?.(cause instanceof Error ? cause : new Error(String(cause)));
-            connection.close();
-          }
-        };
-        connection.onerror = () => {
-          connection.close();
-          if (stopped) return;
-          watchOptions.onConnection?.("reconnecting");
-          retry = setTimeout(connect, options.reconnectDelayMs ?? 500);
-        };
+  function openWatch<T>(id: ConversationId, kind: HttpPiDurableWatchSubscription["kind"], watchOptions: PiDurableWatchOptions): Promise<WatchHandle<T>> {
+    return new Promise((resolve, reject) => {
+      const subscriptionId = ++nextSubscriptionId;
+      let observation: Watch<T> | undefined;
+      let value: T;
+
+      function dispose() {
+        subscriptions.delete(subscriptionId);
+        watchOptions.signal?.removeEventListener("abort", abort);
+        scheduleConnect();
       }
 
-      connect();
-      return () => {
-        stopped = true;
-        clearTimeout(retry);
-        source?.close();
-      };
-    },
-  };
+      function abort() {
+        dispose();
+        if (observation) observation.abort();
+        else reject(watchOptions.signal?.reason ?? new DOMException("Observation aborted", "AbortError"));
+      }
+
+      subscriptions.set(subscriptionId, {
+        request: () => ({ subscriptionId, id, kind, window: watchOptions.window?.() }),
+        connection: (state) => watchOptions.onConnection?.(state === "connecting" && observation ? "reconnecting" : state),
+        receive(raw) {
+          try {
+            const frame = raw as HttpPiDurableWatchFrame<T>;
+            if (frame.type === "end") {
+              dispose();
+              watchOptions.onConnection?.("closed");
+              const error = new Error(frame.error ?? `Pi observation ended: ${frame.kind}`);
+              if (!observation) reject(error);
+              else observation.end(frame.kind === "failed" || frame.kind === "listener_error" ? { kind: frame.kind, error } : { kind: frame.kind });
+              return;
+            }
+            if (frame.type === "failed") {
+              if (!observation) throw new Error(frame.error);
+              observation.fail(new Error(frame.error), BACKGROUND_CONTEXT);
+              return;
+            }
+            if (frame.type === "view") value = frame.view;
+            else {
+              if (!observation) throw new Error("Pi watch sent changes before its initial view");
+              value = applyImmutable(value, frame.ops);
+            }
+            if (!observation) {
+              observation = new Watch(value, dispose, console.error);
+              resolve(observation);
+            } else {
+              observation.advance({ kind: "value", value, ops: frame.type === "ops" ? frame.ops : [["r", value as JsonValue]], retired: false }, BACKGROUND_CONTEXT);
+            }
+            watchOptions.onConnection?.("connected");
+          } catch (error) {
+            dispose();
+            watchOptions.onConnection?.("closed");
+            if (observation) observation.end({ kind: "failed", error });
+            else reject(error);
+          }
+        },
+      });
+      if (watchOptions.signal?.aborted) abort();
+      else {
+        watchOptions.signal?.addEventListener("abort", abort, { once: true });
+        scheduleConnect();
+      }
+    });
+  }
 }

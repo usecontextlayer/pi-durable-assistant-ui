@@ -1,10 +1,11 @@
-export { createHttpPiClient } from "./client.js";
-export type { PiClient, HttpPiWatchFrame, PiWatchOptions, PiConnectionState, PiUploadResult, HttpPiClientOptions, SerializedAgentChange, SerializedConversationCreateOptions } from "./client.js";
-export { createPiAttachmentAdapter } from "./attachments.js";
+export { createHttpPiDurableClient } from "./client.js";
+export type { PiDurableClient, HttpPiDurableWatchFrame, HttpPiDurableWatchEnvelope, HttpPiDurableWatchSubscription, PiDurableWatchOptions, PiDurableConnectionState, PiDurableUploadResult, PiDurableHumanInputDetails, HttpPiDurableClientOptions, SerializedAgentChange, SerializedConversationCreateOptions } from "./client.js";
+export { createPiDurableAttachmentAdapter } from "./attachments.js";
 export type { ConversationMetadata, ConversationMetadataPatch } from "./metadata.js";
 export { conversationInbox, conversationLiveState, entryIdFromMessageId, isForegroundRunning, projectConversation, toPiUserInput } from "./projection.js";
-export { PiRuntimeStore } from "./store.js";
-export type { PiRuntimeState, PiRuntimeStoreOptions } from "./store.js";
-export { usePiRuntime } from "./use-pi-runtime.js";
-export type { UsePiRuntimeOptions } from "./use-pi-runtime.js";
+export { PiDurableConversation } from "./conversation.js";
+export type { PiDurableConversationState } from "./conversation.js";
+export { createPiDurableThreadListAdapter } from "./thread-list.js";
+export { usePiDurableRuntime, usePiDurable } from "./use-pi-durable-runtime.js";
+export type { UsePiDurableRuntimeOptions, PiDurableRuntimeExtras } from "./use-pi-durable-runtime.js";
 export type { ConversationId, ConversationRecord, ConversationView, TranscriptView, SubmissionDraft, SubmissionId, SubmissionRecord, EntryId, AgentChange, AgentState, InboxState, HarnessInspection } from "@earendil-works/pi-durable";

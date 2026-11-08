@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import type { PiUploadResult } from "@usecontextlayer/pi-durable-assistant-ui";
+import type { PiDurableUploadResult } from "@usecontextlayer/pi-durable-assistant-ui";
 
 export interface LocalPaths {
   dataDirectory: string;
@@ -68,7 +68,7 @@ export function createExecutionEnvironments(paths: LocalPaths) {
 
 const imageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-export interface LocalUploadResult extends PiUploadResult {
+export interface LocalUploadResult extends PiDurableUploadResult {
   contentType: string;
   size: number;
   path: string;

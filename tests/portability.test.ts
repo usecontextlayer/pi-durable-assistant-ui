@@ -1,37 +1,39 @@
 import { expect } from "vitest";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { PiRuntimeStore } from "../packages/adapter/src/store.js";
+import { PiDurableConversation } from "../packages/adapter/src/conversation.js";
 import { projectConversation } from "../packages/adapter/src/projection.js";
 import { isForegroundRunning } from "../packages/adapter/src/projection.js";
-import { createLocalPiClient } from "../apps/demo/server/local-client.js";
+import { createLocalPiDurableClient } from "../apps/demo/server/local-client.js";
 import { openLocalPiHost } from "../apps/demo/server/host.js";
-import { answered, test } from "./support/fixtures.js";
+import { observedMessages, isRunning, answered, test } from "./support/fixtures.js";
 import { startApiServer } from "./support/api-server.js";
 
-test("the unchanged adapter store uses a direct native host without an HTTP server", async ({ dataDirectory }) => {
+test("conversation-scoped observations use a direct native host without an HTTP server", async ({ dataDirectory }) => {
   const piHost = await openLocalPiHost({ dataDirectory, tokensPerSecond: 100_000 });
-  const client = createLocalPiClient(piHost);
-  const store = new PiRuntimeStore(client);
+  const client = createLocalPiDurableClient(piHost);
+  const first = await client.createConversation();
+  const store = new PiDurableConversation(client, first.id);
   try {
     store.start();
-    const first = await store.createConversation();
     const submission = await store.submit({ type: "input", content: "Portable native conversation" });
     const answer = await answered(client, submission);
-    await expect.poll(() => store.getSnapshot().messages.some((message) => message.id === `entry:${answer.answer}:0`)).toBe(true);
+    await expect.poll(() => observedMessages(store).some((message) => message.id === `entry:${answer.answer}:0`)).toBe(true);
 
     const native = await piHost.harness.commit((tx) => tx.conversation(first.id), BACKGROUND_CONTEXT);
     expect(native).toEqual(first);
-    expect(store.getSnapshot().selectedId).toBe(first.id);
-    expect(store.getSnapshot().messages).toEqual(projectConversation(store.getSnapshot().view!));
-    expect(JSON.stringify(store.getSnapshot().messages)).toContain("Portable native conversation");
+    expect(store.id).toBe(first.id);
+    expect(observedMessages(store)).toEqual(projectConversation(store.getSnapshot().view!));
+    expect(JSON.stringify(observedMessages(store))).toContain("Portable native conversation");
 
-    const second = await store.createConversation();
-    expect(second.id).not.toBe(first.id);
-    await expect.poll(() => store.getSnapshot().selectedId).toBe(second.id);
-    store.selectConversation(first.id);
-    await expect.poll(() => store.getSnapshot().isLoading).toBe(false);
-    expect(store.getSnapshot().selectedId).toBe(first.id);
-    expect(JSON.stringify(store.getSnapshot().messages)).toContain("Portable native conversation");
+    const second = await client.createConversation();
+    const other = new PiDurableConversation(client, second.id);
+    other.start();
+    await expect.poll(() => other.getSnapshot().isLoading).toBe(false);
+    expect(other.id).toBe(second.id);
+    expect(observedMessages(other)).toEqual([]);
+    expect(JSON.stringify(observedMessages(store))).toContain("Portable native conversation");
+    other.stop();
+
   } finally {
     store.stop();
     await piHost.close();
@@ -40,7 +42,7 @@ test("the unchanged adapter store uses a direct native host without an HTTP serv
 
 test("native background children keep running after the parent answers and report back once", async ({ dataDirectory }) => {
   const piHost = await openLocalPiHost({ dataDirectory, tokensPerSecond: 100_000 });
-  const client = createLocalPiClient(piHost);
+  const client = createLocalPiDurableClient(piHost);
   try {
     const parent = await client.createConversation();
     await answered(client, await client.submit(parent.id, { type: "input", content: "/background" }));
@@ -60,7 +62,7 @@ test("native background children keep running after the parent answers and repor
 
 test("a native background task resumes after reopening without duplicating its child or report", async ({ dataDirectory }) => {
   let piHost = await openLocalPiHost({ dataDirectory, tokensPerSecond: 100_000 });
-  let client = createLocalPiClient(piHost);
+  let client = createLocalPiDurableClient(piHost);
   const parent = await client.createConversation();
   await answered(client, await client.submit(parent.id, { type: "input", content: "/background" }));
   const child = (await client.listConversations({ ownerConversationId: parent.id })).items[0]!;
@@ -68,7 +70,7 @@ test("a native background task resumes after reopening without duplicating its c
   await piHost.close();
 
   piHost = await openLocalPiHost({ dataDirectory, tokensPerSecond: 100_000 });
-  client = createLocalPiClient(piHost);
+  client = createLocalPiDurableClient(piHost);
   try {
     await piHost.harness.waitForTask(child.owner!.taskId, BACKGROUND_CONTEXT);
     expect((await client.listConversations({ ownerConversationId: parent.id })).items.map((record) => record.id)).toEqual([child.id]);
@@ -80,7 +82,7 @@ test("a native background task resumes after reopening without duplicating its c
 
 test("the direct binding preserves native paging and reconstructs state after SQLite reopen", async ({ dataDirectory }) => {
   let piHost = await openLocalPiHost({ dataDirectory, tokensPerSecond: 100_000 });
-  let client = createLocalPiClient(piHost);
+  let client = createLocalPiDurableClient(piHost);
   const conversation = await client.createConversation();
   for (let index = 0; index < 115; index += 1) {
     await client.submit(conversation.id, {
@@ -90,18 +92,18 @@ test("the direct binding preserves native paging and reconstructs state after SQ
   }
   await piHost.close();
   piHost = await openLocalPiHost({ dataDirectory, tokensPerSecond: 100_000 });
-  client = createLocalPiClient(piHost);
-  const store = new PiRuntimeStore(client, { initialConversationId: conversation.id, pageSize: 30 });
+  client = createLocalPiDurableClient(piHost);
+  const store = new PiDurableConversation(client, conversation.id, 30);
   try {
     store.start();
     await expect.poll(() => store.getSnapshot().connection).toBe("connected");
-    expect(store.getSnapshot().hasEarlier).toBe(true);
-    while (store.getSnapshot().hasEarlier) await store.loadEarlier();
-    expect(store.getSnapshot().messages).toHaveLength(115);
-    expect(store.getSnapshot().messages[0]?.id).toMatch(/^entry:\d+:0$/);
-    expect(JSON.stringify(store.getSnapshot().messages[0])).toContain("Portable note 0");
-    expect(JSON.stringify(store.getSnapshot().messages.at(-1))).toContain("Portable note 114");
-    expect(new Set(store.getSnapshot().messages.map((message) => message.id)).size).toBe(115);
+    expect((store.getSnapshot().view?.items[0]?.kind === "earlier")).toBe(true);
+    while ((store.getSnapshot().view?.items[0]?.kind === "earlier")) await store.loadEarlier();
+    expect(observedMessages(store)).toHaveLength(115);
+    expect(observedMessages(store)[0]?.id).toMatch(/^entry:\d+:0$/);
+    expect(JSON.stringify(observedMessages(store)[0])).toContain("Portable note 0");
+    expect(JSON.stringify(observedMessages(store).at(-1))).toContain("Portable note 114");
+    expect(new Set(observedMessages(store).map((message) => message.id)).size).toBe(115);
   } finally {
     store.stop();
     await piHost.close();

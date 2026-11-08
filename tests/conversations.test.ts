@@ -3,17 +3,17 @@ import { defineExtension, section } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { PiClient } from "../packages/adapter/src/client.js";
+import type { PiDurableClient } from "../packages/adapter/src/client.js";
 import { conversationLiveState } from "../packages/adapter/src/projection.js";
-import { PiRuntimeStore } from "../packages/adapter/src/store.js";
+import { PiDurableConversation } from "../packages/adapter/src/conversation.js";
 import { startApiServer } from "./support/api-server.js";
-import { answered, settled, test } from "./support/fixtures.js";
+import { observedMessages, isRunning, answered, settled, test } from "./support/fixtures.js";
 
 test("native conversations keep distinct histories and submission answers after reopening SQLite", async ({ dataDirectory }) => {
   const first = await startApiServer(dataDirectory);
   const conversations = await Promise.all([first.client.createConversation(), first.client.createConversation()]);
   let answer: Awaited<ReturnType<typeof answered>>;
-  let entries: Awaited<ReturnType<PiClient["entries"]>>;
+  let entries: Awaited<ReturnType<PiDurableClient["entries"]>>;
   try {
     expect(conversations[0]!.id).not.toBe(conversations[1]!.id);
     const submission = await first.client.submit(conversations[0]!.id, { type: "input", content: "Remember this local conversation" });
@@ -43,20 +43,20 @@ test("native conversations keep distinct histories and submission answers after 
 test("disconnecting a live observer leaves its native submission running and reconnects to the answer", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory, { tokensPerSecond: 200 });
   const conversation = await host.client.createConversation();
-  const store = new PiRuntimeStore(host.client, { initialConversationId: conversation.id });
+  const store = new PiDurableConversation(host.client, conversation.id);
   try {
     store.start();
     await expect.poll(() => store.getSnapshot().connection).toBe("connected");
     const submission = await store.submit({ type: "input", content: "/long disconnect and return" });
-    await expect.poll(() => store.getSnapshot().isRunning).toBe(true);
-    await expect.poll(() => store.getSnapshot().messages.some((message) => message.role === "assistant")).toBe(true);
+    await expect.poll(() => isRunning(store)).toBe(true);
+    await expect.poll(() => observedMessages(store).some((message) => message.role === "assistant")).toBe(true);
     store.stop();
 
     const answer = await answered(host.client, submission);
     store.start();
     await expect.poll(() => store.getSnapshot().view?.items.some((item) => item.kind === "entry" && item.entry.id === answer.answer)).toBe(true);
-    await expect.poll(() => store.getSnapshot().isRunning).toBe(false);
-    expect(JSON.stringify(store.getSnapshot().messages)).toContain("12. Native history keeps this paragraph");
+    await expect.poll(() => isRunning(store)).toBe(false);
+    expect(JSON.stringify(observedMessages(store))).toContain("12. Native history keeps this paragraph");
     expect((await host.client.getSubmission(submission.id)).status).toBe("done");
   } finally {
     store.stop();
@@ -159,15 +159,15 @@ test("forked edits preserve ancestry and reset changes active context without de
 test("editing the first message and regenerating use native forks while retaining the source conversations", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory, { response: slowToolResponse });
   const original = await host.client.createConversation();
-  const store = new PiRuntimeStore(host.client, { initialConversationId: original.id });
+  const store = new PiDurableConversation(host.client, original.id);
   try {
     await answered(host.client, await host.client.submit(original.id, { type: "input", content: "Original first message" }));
     await answered(host.client, await host.client.submit(original.id, { type: "input", content: "Original later message" }));
     const originalHistory = await host.client.entries(original.id, { order: "ascending" }, 100);
     store.start();
-    await expect.poll(() => store.getSnapshot().messages.length).toBe(4);
-    const originalUser = store.getSnapshot().messages[0]!;
-    await store.edit({
+    await expect.poll(() => observedMessages(store).length).toBe(4);
+    const originalUser = observedMessages(store)[0]!;
+    const edited = await store.edit({
       role: "user",
       sourceId: originalUser.id!,
       parentId: null,
@@ -177,28 +177,31 @@ test("editing the first message and regenerating use native forks while retainin
       metadata: { custom: {} },
       runConfig: undefined,
     });
-    const editedId = store.getSnapshot().selectedId!;
+    const editedId = edited.id;
+    const editedStore = new PiDurableConversation(host.client, editedId);
+    editedStore.start();
     expect(editedId).not.toBe(original.id);
     await expect.poll(async () => (await host.client.entries(editedId, {}, 100)).items.filter((entry) => entry.kind === "pi.assistant").length).toBe(1);
-    await expect.poll(() => JSON.stringify(store.getSnapshot().messages.at(-1))).toContain("Revised first message");
-    await expect.poll(() => store.getSnapshot().isRunning).toBe(false);
+    await expect.poll(() => JSON.stringify(observedMessages(editedStore).at(-1))).toContain("Revised first message");
+    await expect.poll(() => isRunning(editedStore)).toBe(false);
     const editedContext = await host.client.context!(editedId);
     expect(JSON.stringify(editedContext.messages)).toContain("Revised first message");
     expect(JSON.stringify(editedContext.messages)).not.toContain("Original first message");
     expect(JSON.stringify(editedContext.messages)).not.toContain("Original later message");
-    expect(JSON.stringify(store.getSnapshot().messages[0])).toContain("Revised first message");
+    expect(JSON.stringify(observedMessages(editedStore)[0])).toContain("Revised first message");
     expect(await host.client.entries(original.id, { order: "ascending" }, 100)).toEqual(originalHistory);
     const editedHistory = await host.client.entries(editedId, { order: "ascending" }, 100);
     const previousAnswer = editedHistory.items.findLast((entry) => entry.kind === "pi.assistant")!;
 
-    await store.regenerate(store.getSnapshot().messages.find((message) => message.role === "user")!.id!);
-    const regeneratedId = store.getSnapshot().selectedId!;
+    const regenerated = await editedStore.regenerate(observedMessages(editedStore).find((message) => message.role === "user")!.id!);
+    const regeneratedId = regenerated.id;
     expect(regeneratedId).not.toBe(editedId);
     await expect.poll(async () => (await host.client.entries(regeneratedId, {}, 100)).items.filter((entry) => entry.kind === "pi.assistant").length).toBe(2);
     expect((await host.client.getConversationView(regeneratedId)).conversation.parent).toEqual({ conversationId: editedId, at: previousAnswer.id });
     expect((await host.client.context!(regeneratedId)).messages.filter((message) => message.role === "assistant")).toHaveLength(1);
     expect(await host.client.entries(editedId, { order: "ascending" }, 100)).toEqual(editedHistory);
     expect(await host.client.entries(original.id, { order: "ascending" }, 100)).toEqual(originalHistory);
+    editedStore.stop();
   } finally {
     store.stop();
     await host.close();
@@ -296,10 +299,10 @@ test("creation defaults leave existing configuration alone while registered inst
 test("the native transcript loads earlier pages beyond a bounded watch without losing live entries", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory);
   const conversation = await host.client.createConversation();
-  const store = new PiRuntimeStore({
+  const store = new PiDurableConversation({
     ...host.client,
-    watch: (id, onView, options) => host.client.watch(id, onView, { ...options, window: () => ({ min: 2, max: 4 }) }),
-  }, { initialConversationId: conversation.id, pageSize: 2 });
+    watch: (id, options) => host.client.watch(id, { ...options, window: () => ({ min: 2, max: 4 }) }),
+  }, conversation.id, 2);
   try {
     for (const content of ["First page", "Second page", "Third page", "Latest page"]) {
       await answered(host.client, await host.client.submit(conversation.id, { type: "input", content }));
@@ -307,16 +310,16 @@ test("the native transcript loads earlier pages beyond a bounded watch without l
     const allEntries = (await host.client.entries(conversation.id, { order: "ascending" }, 100)).items;
     expect(allEntries.length).toBeGreaterThan(4);
     store.start();
-    await expect.poll(() => store.getSnapshot().hasEarlier).toBe(true);
-    expect(store.getSnapshot().messages).toHaveLength(2);
-    while (store.getSnapshot().hasEarlier) {
+    await expect.poll(() => (store.getSnapshot().view?.items[0]?.kind === "earlier")).toBe(true);
+    expect(observedMessages(store)).toHaveLength(2);
+    while ((store.getSnapshot().view?.items[0]?.kind === "earlier")) {
       const count = store.getSnapshot().view!.items.filter((item) => item.kind === "entry").length;
       await store.loadEarlier();
       expect(store.getSnapshot().view!.items.filter((item) => item.kind === "entry").length).toBeGreaterThan(count);
     }
     const expectedIds = allEntries.map((entry) => entry.id);
     expect(store.getSnapshot().view?.items.flatMap((item) => item.kind === "entry" ? [item.entry.id] : [])).toEqual(expectedIds);
-    expect(store.getSnapshot().messages).toHaveLength(8);
+    expect(observedMessages(store)).toHaveLength(8);
 
     const answer = await answered(host.client, await store.submit({ type: "input", content: "After loading history" }));
     await expect.poll(() => store.getSnapshot().view?.items.at(-1)).toMatchObject({ kind: "entry", entry: { id: answer.answer } });

@@ -55,11 +55,13 @@ pnpm test:e2e
 
 Tests own temporary SQLite databases, workspaces, and ephemeral listening ports. They never use `.data`. Node's experimental EventSource is enabled for tests to exercise the browser client's streaming implementation. Browser installation disables Playwright's shared-cache garbage collection.
 
+Delete and archive are unsupported native operations and raise explicitly; they are not simulated through metadata.
+
 See [feature coverage](FEATURES.md) for the tested behaviors, evidence sources, and remaining limitations.
 
 ## Package boundary
 
-The [adapter README](packages/adapter/README.md) owns the consumer integration contract. `apps/demo/server/local-client.ts` binds native Pi operations for both direct consumers and HTTP routes. HTTP owns request parsing, serialization, and SSE delivery; `apps/demo/src` composes Assistant UI primitives and the demo's Pi-specific controls.
+The [adapter README](packages/adapter/README.md) owns the consumer integration contract. `apps/demo/server/local-client.ts` binds native Pi operations for both direct consumers and HTTP routes. HTTP owns browser request admission, parsing, serialization, and multiplexed SSE delivery over one connection per client; `apps/demo/src` composes Assistant UI primitives and the demo's Pi-specific controls.
 
 `SerializedAgentChange` represents selected tools, extensions, and model tools by registered names. The host resolves those names against Pi's registry before calling native `configure`; it does not serialize functions or store another configuration record. Omitted fields remain unchanged and `null` clears a field. Inspect the current native configuration through Conversation controls.
 

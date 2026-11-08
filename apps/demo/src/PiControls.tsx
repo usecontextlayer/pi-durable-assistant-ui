@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
-import type { AgentState, ContextView, UsageState } from "@earendil-works/pi-durable";
+import type { AgentState, ContextView, UsageState, ConversationId, ConversationRecord } from "@earendil-works/pi-durable";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import type { SerializedAgentChange, PiClient, PiRuntimeState, PiRuntimeStore } from "@usecontextlayer/pi-durable-assistant-ui";
+import type { SerializedAgentChange, PiDurableClient, PiDurableConversationState, PiDurableConversation } from "@usecontextlayer/pi-durable-assistant-ui";
 import { conversationInbox, conversationLiveState } from "@usecontextlayer/pi-durable-assistant-ui";
 
 export interface RegisteredModel {
@@ -11,21 +11,23 @@ export interface RegisteredModel {
 }
 
 interface PiControlsProps {
-  client: Required<PiClient>;
-  state: PiRuntimeState;
-  actions: PiRuntimeStore;
+  client: Required<PiDurableClient>;
+  state: PiDurableConversationState;
+  actions: PiDurableConversation;
+  onSelectConversation: (id: ConversationId) => void;
   models: readonly RegisteredModel[];
 }
 
 const thinkingLevels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-export function PiControls({ client, state, actions, models }: PiControlsProps) {
+export function PiControls({ client, state, actions, models, onSelectConversation }: PiControlsProps) {
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
   const [context, setContext] = useState<ContextView>();
 
-  const id = state.selectedId;
+  const [children, setChildren] = useState<readonly ConversationRecord[]>([]);
+  const id = actions.id;
   const view = state.view;
   if (id === undefined || !view) return null;
   const agent = (view.docs["pi.agent"] ?? {}) as AgentState;
@@ -37,7 +39,6 @@ export function PiControls({ client, state, actions, models }: PiControlsProps) 
   const modelOptions = model && !models.some((candidate) => candidate.provider === model.provider && candidate.id === model.modelId)
     ? [{ provider: model.provider, id: model.modelId, name: model.modelId }, ...models]
     : models;
-  const children = state.conversations.filter((conversation) => conversation.owner?.conversationId === id);
 
   async function run(action: () => Promise<string | void>, message?: string) {
     setPending(true);
@@ -70,7 +71,9 @@ export function PiControls({ client, state, actions, models }: PiControlsProps) 
   }
 
   return (
-    <details className="native-controls">
+    <details className="native-controls" onToggle={(event) => {
+      if (event.target === event.currentTarget && event.currentTarget.open) void run(async () => { setChildren((await client.listConversations({ ownerConversationId: id }, 100)).items); });
+    }}>
       <summary>Conversation controls</summary>
       <div className="native-controls-body">
         {notice ? <p className="control-notice" role="status">{notice}</p> : null}
@@ -79,13 +82,13 @@ export function PiControls({ client, state, actions, models }: PiControlsProps) 
         {view.conversation.parent || view.conversation.owner || children.length > 0 ? (
           <div className="conversation-relations">
             {view.conversation.parent ? (
-              <p>Forked from <button onClick={() => actions.selectConversation(view.conversation.parent!.conversationId)}>Conversation {view.conversation.parent.conversationId}</button> at entry {view.conversation.parent.at}.</p>
+              <p>Forked from <button onClick={() => onSelectConversation(view.conversation.parent!.conversationId)}>Conversation {view.conversation.parent.conversationId}</button> at entry {view.conversation.parent.at}.</p>
             ) : null}
             {view.conversation.owner ? (
-              <p>Created by task {view.conversation.owner.taskId} in <button onClick={() => actions.selectConversation(view.conversation.owner!.conversationId)}>Conversation {view.conversation.owner.conversationId}</button>.</p>
+              <p>Created by task {view.conversation.owner.taskId} in <button onClick={() => onSelectConversation(view.conversation.owner!.conversationId)}>Conversation {view.conversation.owner.conversationId}</button>.</p>
             ) : null}
             {children.length > 0 ? (
-              <div>Child conversations: {children.map((conversation) => <button key={conversation.id} onClick={() => actions.selectConversation(conversation.id)}>Conversation {conversation.id}</button>)}</div>
+              <div>Child conversations: {children.map((conversation) => <button key={conversation.id} onClick={() => onSelectConversation(conversation.id)}>Conversation {conversation.id}</button>)}</div>
             ) : null}
           </div>
         ) : null}

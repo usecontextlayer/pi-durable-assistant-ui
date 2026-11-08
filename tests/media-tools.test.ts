@@ -1,13 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect } from "vitest";
-import { PiRuntimeStore } from "../packages/adapter/src/store.js";
+import { PiDurableConversation } from "../packages/adapter/src/conversation.js";
 import type { LocalUploadResult } from "../apps/demo/server/env.js";
 import { startApiServer } from "./support/api-server.js";
-import { answered, test } from "./support/fixtures.js";
+import { observedMessages, isRunning, answered, test } from "./support/fixtures.js";
 
-function projectedTools(store: PiRuntimeStore) {
-  return store.getSnapshot().messages.flatMap((message) => typeof message.content === "string" ? [] : message.content.filter((part) => part.type === "tool-call"));
+function projectedTools(store: PiDurableConversation) {
+  return observedMessages(store).flatMap((message) => typeof message.content === "string" ? [] : message.content.filter((part) => part.type === "tool-call"));
 }
 
 test("an uploaded file is retrievable and readable by Pi's native file tool", async ({ dataDirectory }) => {
@@ -32,14 +32,14 @@ test("an uploaded file is retrievable and readable by Pi's native file tool", as
 
 test("native write, read and edit tools change the working file and project their matching results", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory);
-  const store = new PiRuntimeStore(host.client);
+  const conversation = await host.client.createConversation();
+  const store = new PiDurableConversation(host.client, conversation.id);
   try {
     store.start();
-    const conversation = await store.createConversation();
     await answered(host.client, await store.submit({ type: "input", content: "/files" }));
     expect(await readFile(join(host.piHost.paths.workspacePath, "demo-note.txt"), "utf8")).toBe("Edited through Pi's native tool.\n");
     await expect.poll(() => projectedTools(store).map((tool) => tool.toolName)).toEqual(["write", "read", "edit", "read"]);
-    await expect.poll(() => store.getSnapshot().isRunning).toBe(false);
+    await expect.poll(() => isRunning(store)).toBe(false);
     const tools = projectedTools(store);
     expect(tools.map((tool) => tool.toolName)).toEqual(["write", "read", "edit", "read"]);
     expect(tools.every((tool) => tool.result !== undefined && tool.isError === false)).toBe(true);
@@ -70,7 +70,8 @@ test.for([
 
 test("image attachments and image tool results retain their native media content", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory);
-  const store = new PiRuntimeStore(host.client);
+  const conversation = await host.client.createConversation();
+  const store = new PiDurableConversation(host.client, conversation.id);
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF1kAAAAASUVORK5CYII=";
   try {
     const uploadResponse = await fetch(`${host.baseUrl}/files?name=pixel.png`, { method: "POST", headers: { "content-type": "image/png" }, body: Buffer.from(png, "base64") });
@@ -80,7 +81,6 @@ test("image attachments and image tool results retain their native media content
     expect(download.headers.get("content-type")).toBe("image/png");
     expect(Buffer.from(await download.arrayBuffer()).toString("base64")).toBe(png);
     store.start();
-    const conversation = await store.createConversation();
     const input = await answered(host.client, await store.submit({ type: "input", content: uploadResult.content }));
     const inputHistory = await host.client.entries(conversation.id, { order: "ascending" }, 100);
     expect(inputHistory.items.find((entry) => entry.id === input.entry)?.model).toMatchObject([{ role: "user", content: [{ type: "image", data: png, mimeType: "image/png" }] }]);
@@ -99,22 +99,22 @@ test("image attachments and image tool results retain their native media content
 
 test("native tool details stream before settling to the final result", async ({ dataDirectory }) => {
   const host = await startApiServer(dataDirectory);
-  const store = new PiRuntimeStore(host.client);
+  const conversation = await host.client.createConversation();
+  const store = new PiDurableConversation(host.client, conversation.id);
   const progress: number[] = [];
   const unsubscribe = store.subscribe(() => {
     const tool = projectedTools(store).find((item) => item.toolName === "demo_progress");
-    const result = tool?.result;
+    const result = tool?.artifact;
     if (tool?.isPreliminary && result && typeof result === "object" && "completed" in result && typeof result.completed === "number" && result.completed < 5) {
       progress.push(result.completed);
     }
   });
   try {
     store.start();
-    await store.createConversation();
     await answered(host.client, await store.submit({ type: "input", content: "/progress" }));
     await expect.poll(() => projectedTools(store).find((tool) => tool.toolName === "demo_progress")?.isPreliminary).toBe(false);
     expect(progress.length).toBeGreaterThan(0);
-    expect(projectedTools(store).find((tool) => tool.toolName === "demo_progress")?.result).toEqual({ completed: 5, total: 5 });
+    expect(projectedTools(store).find((tool) => tool.toolName === "demo_progress")?.artifact).toEqual({ completed: 5, total: 5 });
   } finally {
     unsubscribe();
     store.stop();

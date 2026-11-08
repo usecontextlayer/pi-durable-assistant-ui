@@ -11,8 +11,8 @@ import {
   type ConversationRecord,
 } from "@earendil-works/pi-durable";
 import type { AppendMessage } from "@assistant-ui/react";
-import type { PiClient } from "./client.js";
-import { PiRuntimeStore } from "./store.js";
+import type { PiDurableClient } from "./client.js";
+import { PiDurableConversation } from "./conversation.js";
 import { projectConversation } from "./projection.js";
 
 it("edits the first input through native fork/context-edit while retaining original history", async () => {
@@ -32,7 +32,7 @@ it("edits the first input through native fork/context-edit while retaining origi
     if (!value) throw new Error("Missing conversation record");
     return value;
   }
-  const client: PiClient = {
+  const client: PiDurableClient = {
     listConversations: (query = {}, limit = 100, cursor) => harness.commit((tx) => tx.scanConversations(query, limit, cursor), context),
     createConversation: async (options = { ownership: { kind: "ownerless" } }) => record(await harness.createConversation({ ownership: options.ownership }, context)),
     getConversationView: async (id) => { const watch = await (await get(id)).watch(context); const value = watch.value; await watch.stop(); return value; },
@@ -42,10 +42,10 @@ it("edits the first input through native fork/context-edit while retaining origi
     fork: async (id, at, options = { ownership: { kind: "ownerless" } }) => record(await (await get(id)).fork(at, { ownership: options.ownership }, context)),
     watch: () => { throw new Error("This native operation test does not start browser observation"); },
   };
-  const store = new PiRuntimeStore(client, { initialConversationId: conversation.id });
+  const store = new PiDurableConversation(client, conversation.id);
   try {
-    await store.edit({ sourceId: `entry:${inputRecord.entry}:0`, content: [{ type: "text", text: "Revised question" }], attachments: [] } as unknown as AppendMessage);
-    const fork = await get(store.getSnapshot().selectedId!);
+    const createdFork = await store.edit({ sourceId: `entry:${inputRecord.entry}:0`, content: [{ type: "text", text: "Revised question" }], attachments: [] } as unknown as AppendMessage);
+    const fork = await get(createdFork.id);
     await fork.waitForIdle(context);
     expect((await conversation.context(context)).messages).toContainEqual(expect.objectContaining({ role: "user", content: "Original question" }));
     expect((await fork.context(context)).messages).toContainEqual(expect.objectContaining({ role: "user", content: [{ type: "text", text: "Revised question" }] }));

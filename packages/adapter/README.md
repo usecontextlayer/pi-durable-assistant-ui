@@ -1,83 +1,68 @@
-<div align="center">
-
 # Pi Durable for Assistant UI
 
-Render [Pi Durable](https://github.com/earendil-works/pi/tree/v1.5.0/packages/durable) conversations with [Assistant UI](https://www.assistant-ui.com) while Pi owns history and execution.
+Render native Pi Durable conversations through Assistant UI. Pi owns durable history, execution, submissions and configuration; Assistant UI owns thread navigation, drafts, initialization and directory pagination.
 
-</div>
+## Build and consume
 
-```tsx
-import type { ReactNode } from "react";
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { createHttpPiClient, usePiRuntime } from "@usecontextlayer/pi-durable-assistant-ui";
-const client = createHttpPiClient({ baseUrl: "/api" });
-```
-
-```tsx
-export function PiChat({ children }: { children: ReactNode }) {
-  const { runtime } = usePiRuntime({ client });
-  return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>;
-}
-```
-
-- **Use Assistant UI components.** The hook supplies an `ExternalStoreRuntime` for your thread, composer, and conversation list.
-- **Keep Pi as the source of truth.** One thread maps to one native conversation. The browser stores no second durable transcript and runs no model.
-- **Reconnect to ongoing work.** Streaming, earlier history, and reconnect gaps use native Pi views and `ConversationTranscript`. Closing a subscription does not cancel execution.
-- **Choose your host.** Implement `PiClient` or use the included HTTP/SSE client with the demo's protocol. The adapter has no dependency on the demo's Node/SQLite host.
-
-## Install
+From the repository root:
 
 ```sh
-pnpm add @usecontextlayer/pi-durable-assistant-ui @assistant-ui/react@0.15.32 react@19 react-dom@19
-```
-
-The package builds as ESM with TypeScript declarations. It requires React 19 and `@assistant-ui/react` 0.15.32; Pi Durable, Pi AI, and Chord are pinned to 1.5.0. Keep the client instance stable, as in the example above, and render your Assistant UI components inside `PiChat`. This package supplies the runtime integration, not the demo's components or server.
-
-## Build from source
-
-From the workspace root, build and pack it:
-
-```sh
+pnpm install --frozen-lockfile
 pnpm exec turbo run build --filter=@usecontextlayer/pi-durable-assistant-ui
 pnpm --dir packages/adapter pack
 ```
 
-Install the resulting tarball in your application and supply the React and Assistant UI peers.
+Install the resulting tarball into your application, together with React 19, `@assistant-ui/react` compatible with `^0.15.32`, and Pi Durable compatible with `^1.5.0`. Pi Durable is a peer because native branded identifiers cross the host boundary. The checkout pins its verification dependencies in pnpm-lock.yaml. The adapter builds as ESM with TypeScript declarations and does not depend on the demo's Node/SQLite host.
 
-## Runtime and actions
+```tsx
+import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import {
+  createHttpPiDurableClient,
+  usePiDurableRuntime,
+} from "@usecontextlayer/pi-durable-assistant-ui";
 
-`usePiRuntime` returns `{ runtime, state, actions }`. `state` exposes the native conversation directory, selected ID, merged transcript view, rendered messages, running/connection/loading state, errors, and metadata. `actions` exposes conversation selection and creation, earlier-history loading, submissions, continuation, steering, withdrawal, configuration, cancellation, forks, reset, and compaction where the client supports them.
+const client = createHttpPiDurableClient({ baseUrl: "/api" });
 
-Pass `initialConversationId` to reopen a native conversation, for example an ID saved in your URL. It applies when the store is constructed; later navigation uses `actions.selectConversation(id)`. `whenBusy` selects Pi's `followUp`, `steer`, or `reject` submission behavior.
+export function PiChat({ children }: { children: React.ReactNode }) {
+  const runtime = usePiDurableRuntime({ client });
+  return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>;
+}
+```
 
-For use outside React, `PiRuntimeStore` exposes the same actions with `start`, `stop`, `subscribe`, and `getSnapshot`. `projectConversation` supplies the pure message projection.
+Keep the client stable. `usePiDurableRuntime` returns the standard Assistant UI runtime, so thread selection and directory actions use Assistant UI's APIs and primitives. Pass a controlled native `threadId` and `onThreadIdChange` to connect navigation to a URL. New threads are framework drafts until their first send initializes a native conversation. Assistant UI's temporary local identifiers remain internal; the canonical remote ID is the string representation of the native Pi conversation ID. Forks select their own native conversation as another thread.
 
-## Host contract
+The remote runtime retains visited thread runtimes until its lifecycle releases them. Each initialized thread owns a `PiDurableConversation`, its native `ConversationTranscript`, conversation observation and optional metadata observation. Closing an observation never cancels agent execution. Directory pages load on demand; the adapter reads metadata only for that page and does not rescan the entire directory after every answer.
 
-`PiClient` is a structural interface whose optional methods describe host capabilities. Assistant UI callbacks are enabled only when the corresponding capability exists. The included `createHttpPiClient` returns `Required<PiClient>` and expects the demo's native-operation routes: an ordinary Pi host does not acquire those routes simply by installing this package.
+## Native state and actions
 
-The HTTP watch carries an initial `ConversationView` and subsequent Chord operations over SSE. Pi's `ConversationTranscript` merges the bounded live view with earlier history and supplies reconnect windows. The host owns execution independently of each browser's watch.
+Inside `AssistantRuntimeProvider`, `usePiDurable()` reads the current thread's `{ conversation, state }` extras. `conversation` is undefined for a draft; otherwise its ID and all its actions are bound to one native conversation. `state` contains the merged native view, metadata, transport connection/loading state and an error when one is reported. Native controls can use submission, continuation, steering, withdrawal, cancellation, configuration, forks, reset, compaction and earlier-history operations where the host supplies them.
 
-Conversation and entry IDs remain Pi's IDs; their string representations are UI keys. Live generation uses a native task-derived key until its immutable entry arrives. Projection matches tool results by native call ID, retains partial output, separates foreground generation from after-run activity, and leaves internal instruction entries out of chat. Raw history remains available through `state.view`.
+For direct non-React observation, construct `new PiDurableConversation(client, id, pageSize)`, subscribe with `subscribe`/`getSnapshot`, then call `start` and `stop`. It has no selection method or global directory. Edit and regeneration return a native fork and target both the context write and continuation explicitly at that fork; the React integration then asks Assistant UI to select it.
 
-`SerializedAgentChange` carries JSON configuration with registered tool, extension, and model-tool names. The host resolves those names before native configuration; omitted fields are unchanged and `null` clears a field.
+## Host contract and observation
 
-## Edits and forks
+Implement the structural `PiDurableClient` or use `createHttpPiDurableClient` with the demo protocol. Installing the adapter does not install server routes. Optional client methods describe host extensions; titles, feedback, suggestions, uploads and human input require the corresponding host implementation.
 
-Editing forks at the original input, records a native context replacement, and continues the new conversation. Regeneration forks at the selected answer, omits it from the fork's model context through a native context edit, and continues. The original immutable history stays available.
+`watch` returns Pi/Chord's standard asynchronous watch handle: current immutable `value`, `start`, `stop` and terminal `closed` outcome. HTTP carries an initial view, native Chord operations, recoverable source failures and terminal outcomes over one shared SSE connection per client. Logical subscriptions are tagged independently so retained thread runtimes do not exhaust browser HTTP connection limits. It reconstructs the same watch contract in the browser using Chord. Transport reconnection status remains separate from source termination. Native acquisition failures and terminal outcomes close the source rather than retrying indefinitely. Resume windows come from the thread's native transcript.
 
-Each native fork is a separate thread. No hidden in-thread branch store or `setMessages` callback overwrites Pi history.
+`watchMetadata`, when supplied, observes the host's native metadata document. The demo uses a conversation document for title, feedback keyed by native entry ID and static suggestions, with checkpoints on updates. The native creation hook initializes the document for each conversation, including forks. Native conversation views do not include arbitrary custom documents. Metadata changes update mounted conversations live; an observed title change refreshes Assistant UI's directory through its reload API. Newly created conversations from another client appear on explicit directory refresh. The optional batch metadata operation accepts only the IDs in the requested directory page.
 
-## Attachments and extensions
+`SerializedAgentChange` carries JSON tool, extension and model-tool names; the host resolves those names into registered native definitions. Omitted fields remain unchanged and null clears a field. Host-specific registry and execution-environment choices remain outside the adapter.
 
-Pass `createPiAttachmentAdapter(client.uploadFile)` as the hook's `attachments` option when the host supports uploads. Uploads happen on send. `PiUploadResult` requires only `name` and `content`, an array of native Pi input blocks: images can remain image blocks; other files can be paths readable by native tools. The adapter returns Assistant UI's standard `CompleteAttachment`. The host owns storage; paths, download URLs, sizes and content types are not required by the adapter. Removing a draft attachment does not delete an uploaded workspace file.
+## Message semantics
 
-The hook accepts Assistant UI's `speech`, `dictation`, and `feedback` adapters. For browser voice controls, use `WebSpeechSynthesisAdapter` and support-gated `WebSpeechDictationAdapter` from Assistant UI. No speech provider is built into this package; browser support and permissions remain the consumer's responsibility.
+The projection uses native entry IDs, joins tool results by native call ID and marks transient live messages optimistic so Assistant UI can evict them when committed entries arrive. Tool output is distinct from its UI-only artifact; native image output remains available as model content. The exported `PiDurableHumanInputDetails` artifact contract (native task ID, prompt, pending/answered status and answered response) becomes a text tool-approval request, and `onRespondToToolApproval` calls the host response operation for the native task. A response does not fabricate a browser-side tool result.
 
-The optional `respondToHumanInput` client operation sends a response to a host's durable human-interaction extension. It answers the native task rather than fabricating a browser-side tool result.
+Reset and compaction notices are named `pi-context` data parts. Consumers register their own data renderer; the demo supplies one. Native entry guards classify those notices. Committed-history projection is memoized separately from live execution so unchanged message objects survive streaming updates. The pure `projectConversation` export remains available for non-React consumers.
 
-## Titles, archive, and feedback
+## Queue and unsupported operations
 
-Optional metadata methods support titles, archive state, feedback keyed by native entry ID, and suggestions. The demo persists these in a native Pi conversation document. Such custom metadata is not included in `ConversationView.docs`, so the adapter reads it explicitly. Archiving preserves history; no permanent-delete operation is invented.
+The standard composer can send during a run through a queue adapter backed by Pi's native inbox. Assistant UI's normal busy send steers; `aui.composer().send({ steer: false })` enqueues a follow-up. Queue items retain native submission IDs, and removing one withdraws that submission. Pi owns processing and cancellation behavior; the adapter does not drain a second queue.
 
-The directory follows native pagination and loads metadata in bulk. Starting observation and completing observed work refresh the directory; connecting or reconnecting the selected conversation refreshes its metadata. Mutations publish the host's returned metadata. There is no cross-browser subscription for the directory or metadata: changes made elsewhere appear on the next applicable read or explicit refresh. Messages and execution remain live through the conversation watch. `state.metadata` uses stringified native conversation IDs as keys.
+Pi Durable 1.5.0 has no native queue move/edit, permanent conversation deletion, archive or unarchive operation. Required delete, archive and queue move/edit methods reject explicitly; optional unarchive is omitted so Assistant UI reports that capability as unavailable. The demo exposes none of those controls. Archive is not simulated with a custom document. Withdrawal followed by another submission remains two distinct native operations with a new ID. Unsupported operations never report success.
+
+## Attachments, feedback and voice
+
+`createPiDurableAttachmentAdapter(client.uploadFile)` uses Assistant UI's attachment lifecycle and returns `CompleteAttachment`. The uploader supplies a name and native Pi input blocks; host storage paths, download URLs and content types remain host concerns. Removing a draft attachment does not delete an uploaded file from the host workspace.
+
+Pass Assistant UI's `speech`, `dictation`, `attachments` and optional `feedback` adapters directly to the runtime hook. Without a feedback override, the native host feedback extension is used when available. Browser speech and dictation use Assistant UI's official adapters and support checks; actual microphone capture and audible playback remain device-dependent and unverified in this project.

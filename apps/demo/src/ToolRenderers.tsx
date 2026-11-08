@@ -1,19 +1,11 @@
 import { useState, type FormEvent } from "react";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
-import type { PiClient } from "@usecontextlayer/pi-durable-assistant-ui";
-import type { HumanInputDetails } from "../server/interaction";
 
-function isHumanInputDetails(value: unknown): value is HumanInputDetails {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return item.type === "human-input" && typeof item.taskId === "number" && typeof item.prompt === "string" && (item.status === "pending" || item.status === "answered");
-}
-
-export function HumanInputTool({ client, ...props }: ToolCallMessagePartProps & { client: Pick<Required<PiClient>, "respondToHumanInput"> }) {
+export function HumanInputTool(props: ToolCallMessagePartProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
-  if (!isHumanInputDetails(props.result)) return <ToolResult {...props} />;
-  const request = props.result;
+  const request = props.approval;
+  if (!request || request.display !== "text") return <ToolResult {...props} />;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -24,7 +16,7 @@ export function HumanInputTool({ client, ...props }: ToolCallMessagePartProps & 
     }
     setSending(true);
     setError(undefined);
-    void client.respondToHumanInput(request.taskId, response)
+    void props.respondToApproval({ text: response })
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setSending(false));
   }
@@ -33,8 +25,8 @@ export function HumanInputTool({ client, ...props }: ToolCallMessagePartProps & 
     <section className="human-input" aria-label="Agent question">
       <h3>Pi needs your input</h3>
       <p>{request.prompt}</p>
-      {request.status === "answered" ? (
-        <div className="human-answer"><strong>Your response</strong><p>{request.response}</p></div>
+      {request.approved !== undefined ? (
+        <div className="human-answer"><strong>Your response</strong><p>{request.text}</p></div>
       ) : (
         <form onSubmit={submit}>
           <label><span>Response</span><textarea name="response" aria-label="Response" required rows={3} disabled={sending} /></label>

@@ -1,3 +1,4 @@
+import type { PiDurableHumanInputDetails } from "@usecontextlayer/pi-durable-assistant-ui";
 import type { Context } from "@earendil-works/chord/context";
 import {
   defineDoc,
@@ -15,14 +16,6 @@ type HumanInputState = {
   response: string | null;
 };
 
-export type HumanInputDetails = {
-  type: "human-input";
-  taskId: TaskId;
-  prompt: string;
-  status: "pending" | "answered";
-  response?: string;
-};
-
 export const HumanInputDoc = defineDoc<HumanInputState>({
   kind: "demo.human-input",
   version: 1,
@@ -31,17 +24,12 @@ export const HumanInputDoc = defineDoc<HumanInputState>({
   checkpointWhen: () => false,
 });
 
-function details(taskId: TaskId, state: Readonly<HumanInputState>): HumanInputDetails {
-  return {
-    type: "human-input",
-    taskId,
-    prompt: state.prompt,
-    status: state.response === null ? "pending" : "answered",
-    ...(state.response === null ? {} : { response: state.response }),
-  };
+function details(taskId: TaskId, state: Readonly<HumanInputState>): PiDurableHumanInputDetails {
+  const request = { type: "human-input" as const, taskId, prompt: state.prompt };
+  return state.response === null ? { ...request, status: "pending" } : { ...request, status: "answered", response: state.response };
 }
 
-async function waitForResponse(api: ToolExecutionApi<HumanInputDetails>, context: Context): Promise<string> {
+async function waitForResponse(api: ToolExecutionApi<PiDurableHumanInputDetails>, context: Context): Promise<string> {
   const watch = await api.watchDoc(HumanInputDoc, api.taskId, context);
   if (!watch) throw new Error("The human input request is no longer available.");
 
@@ -97,7 +85,7 @@ export async function respondToHumanInput(
   taskId: TaskId,
   response: string,
   context: Context,
-): Promise<HumanInputDetails> {
+): Promise<PiDurableHumanInputDetails> {
   if (!await harness.snapshot(HumanInputDoc, taskId, context)) {
     throw new Error("The human input request is no longer available.");
   }

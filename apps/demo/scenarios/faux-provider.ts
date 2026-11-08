@@ -29,7 +29,7 @@ export const DEMO_SCENARIOS = [
   { command: "/image", description: "Return a native PNG tool-output block." },
   { command: "/subagent", description: "Delegate to a real foreground child conversation." },
   { command: "/handoff", description: "Start a new active context through a native tool handoff." },
-  { command: "/approval", description: "Wait for a person using a durable native tool interaction." },
+  { command: "/approval", description: "Wait for a person through durable native human input." },
   { command: "/background", description: "Start a real background child and receive its result later." },
   { command: "/limit", description: "Run multiple tool turns to exercise maxTurns and continuation." },
   { command: "/read <path>", description: "Read an uploaded text file or image through the native read tool." },

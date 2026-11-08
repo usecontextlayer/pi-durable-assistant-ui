@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { createHttpPiClient } from "../../packages/adapter/src/client.js";
+import { createHttpPiDurableClient } from "../../packages/adapter/src/client.js";
 import { openLocalPiHost, type OpenLocalPiHostOptions } from "../../apps/demo/server/host.js";
 import { createApiServer } from "../../apps/demo/server/http.js";
 
@@ -15,7 +15,7 @@ export async function startApiServer(dataDirectory: string, options: Omit<OpenLo
   return {
     piHost,
     baseUrl,
-    client: createHttpPiClient({ baseUrl }),
+    client: createHttpPiDurableClient({ baseUrl }),
     async close() {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

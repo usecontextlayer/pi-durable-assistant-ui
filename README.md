@@ -15,7 +15,7 @@ pnpm dev
 - **One thread, one conversation.** Pi owns the identifiers, history, submissions, and execution. Assistant UI renders them.
 - **Keep running after disconnect.** Close the browser while the agent works, then reconnect to its current state. Multiple browsers can watch the same conversation.
 - **Exercise native Pi features.** Stream text and tool results, upload files, edit and fork conversations, steer work, and respond to durable human-input requests.
-- **Bring your own host and UI.** Use the adapter with Assistant UI components and a `PiClient` implementation. The adapter has no dependency on the demo server.
+- **Bring your own host and UI.** Use the adapter with Assistant UI components and a `PiDurableClient` implementation. The adapter has no dependency on the demo server.
 
 ## Try the demo
 
@@ -33,7 +33,7 @@ The demo registers Haiku models only. Keys stay on the server. See [Developing](
 
 ## Use the adapter
 
-[`@usecontextlayer/pi-durable-assistant-ui`](https://www.npmjs.com/package/@usecontextlayer/pi-durable-assistant-ui) provides `usePiRuntime`, `PiRuntimeStore`, an HTTP/SSE client, attachment support, and message projection. `usePiRuntime` supplies an Assistant UI `ExternalStoreRuntime`; your application supplies the components. See the [adapter README](packages/adapter/README.md) for installation and integration.
+The adapter provides `usePiDurableRuntime`, conversation-scoped native observations/actions, an HTTP/SSE client, attachments and message projection. The hook composes Assistant UI's remote thread-list runtime with an external-store runtime for each Pi conversation. Your application supplies the components. See the [adapter README](packages/adapter/README.md) for building and consuming the package.
 
 The [demo UI](apps/demo/src/App.tsx) composes Assistant UI primitives with Pi controls, tool renderers, and task inspection. Those components and the [local Node host](apps/demo/server/local-client.ts) are demo source, separate from the adapter package.
 
@@ -41,4 +41,4 @@ The [demo UI](apps/demo/src/App.tsx) composes Assistant UI primitives with Pi co
 
 The host exposes native Pi operations and a conversation watch. The HTTP client receives an initial view followed by Chord updates; Pi's `ConversationTranscript` handles earlier history and reconnect gaps. The adapter projects that state into Assistant UI without persisting another transcript. Native forks appear as separate conversations.
 
-Messages and execution update across connected browsers. The conversation list, titles, archive state, and feedback refresh through reads rather than a cross-browser subscription. See [feature coverage](FEATURES.md) for verified behavior and the exact support boundaries.
+Messages, execution and metadata update in mounted conversations across connected browsers. Observed title changes refresh Assistant UI’s directory; newly created conversations from another client appear after directory refresh. Delete and archive explicitly reject because Pi Durable has no native operation for either. See [feature coverage](FEATURES.md) for verified behavior and the exact support boundaries.

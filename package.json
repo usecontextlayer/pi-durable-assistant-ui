@@ -12,7 +12,7 @@
     "build": "turbo run build --filter=@pi-ui/demo...",
     "check": "turbo run check --filter=@pi-ui/demo... && tsc --noEmit",
     "test": "node --experimental-eventsource node_modules/vitest/vitest.mjs run",
-    "test:e2e": "playwright test"
+    "test:e2e": "turbo run build --filter=@usecontextlayer/pi-durable-assistant-ui && playwright test"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.5.0",

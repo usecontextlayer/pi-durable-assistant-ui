@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppendMessage } from "@assistant-ui/react";
 import type { AssistantMessage, Message, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { EntryRecord, LiveState, TranscriptView } from "@earendil-works/pi-durable";
-import { isForegroundRunning, projectConversation, toPiUserInput } from "./projection.js";
+import { isForegroundRunning, projectConversation, projectConversationHistory, projectConversationLive, toPiUserInput } from "./projection.js";
 import type { ConversationMetadata } from "./metadata.js";
 
 function assistant(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"] = "stop"): AssistantMessage {
@@ -133,9 +133,45 @@ describe("Pi conversation projection", () => {
 
   it("restores feedback using the native answer entry ID", () => {
     const answer = entry(14, [assistant([{ type: "text", text: "An answer" }])]);
-    const metadata = { title: "A conversation", archived: false, feedback: { 14: "positive" }, suggestions: [] } as unknown as ConversationMetadata;
+    const metadata = { title: "A conversation", feedback: { 14: "positive" }, suggestions: [] } as unknown as ConversationMetadata;
     const projected = projectConversation(view([answer]), metadata);
     expect(projected[0]?.metadata?.submittedFeedback).toEqual({ type: "positive" });
     expect(projected[0]?.metadata?.custom).toMatchObject({ entryId: 14 });
   });
+
+  it("keeps tool output separate from UI artifacts", () => {
+    const output = { ...result("child", "The child's actual answer"), details: { conversationId: 42 } };
+    const projected = projectConversation(view([
+      entry(1, [assistant([{ type: "toolCall", id: "child", name: "demo_subagent", arguments: {} }], "toolUse")]),
+      entry(2, [output], "pi.tool-result"),
+    ]));
+    expect(projected[0]?.content).toEqual([expect.objectContaining({ result: "The child's actual answer", artifact: { conversationId: 42 }, modelContent: [{ type: "text", text: "The child's actual answer" }] })]);
+  });
+
+  it("preserves committed projection identity and leaves its tools unchanged across live updates", () => {
+    const history = projectConversationHistory(view([
+      entry(1, [{ role: "user", content: "Keep this message", timestamp: 1 }]),
+      entry(2, [assistant([{ type: "toolCall", id: "progress", name: "demo_progress", arguments: {} }], "toolUse")]),
+    ]).items);
+    const first = projectConversationLive(history, { tools: [{ callId: "progress", name: "demo_progress", status: "running", output: "First progress" }] }, 1 as TranscriptView["conversation"]["id"]);
+    const next = projectConversationLive(history, { tools: [{ callId: "progress", name: "demo_progress", status: "running", output: "Later progress" }] }, 1 as TranscriptView["conversation"]["id"]);
+    expect(first[0]).toBe(next[0]);
+    expect(next[1]).not.toBe(first[1]);
+    expect(first[1]?.content).toEqual([expect.objectContaining({ result: "First progress" })]);
+    expect(next[1]?.content).toEqual([expect.objectContaining({ result: "Later progress" })]);
+    expect(history.messages[1]?.content).toEqual([expect.not.objectContaining({ result: expect.anything() })]);
+  });
+
+  it("exposes durable human questions through Assistant UI text approval", () => {
+    const projected = projectConversation(view([
+      entry(1, [assistant([{ type: "toolCall", id: "question", name: "request_human_input", arguments: {} }], "toolUse")]),
+    ], { tools: [{ callId: "question", name: "request_human_input", status: "running", details: { type: "human-input", taskId: 9, prompt: "Which direction?", status: "pending" } }] }));
+    expect(projected[0]?.content).toEqual([expect.objectContaining({ approval: { id: "9", display: "text", prompt: "Which direction?" } })]);
+  });
+
+  it("projects native run failures that have no assistant message", () => {
+    const projected = projectConversation(view([], { runFailure: { taskId: 9, inputs: [], reason: "no_model", detail: "No registered model" } } as unknown as LiveState));
+    expect(projected).toEqual([expect.objectContaining({ id: "failure:9", status: { type: "incomplete", reason: "error", error: "No registered model" } })]);
+  });
+
 });

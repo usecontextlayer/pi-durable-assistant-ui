@@ -1,3 +1,4 @@
+import type { PiDurableHumanInputDetails } from "../packages/adapter/src/client.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,8 +12,7 @@ import {
   HumanInputDoc,
   humanInputExtension,
   respondToHumanInput,
-  type HumanInputDetails,
-} from "../apps/demo/server/interaction.js";
+} from "../apps/demo/server/human-input.js";
 
 const context = BACKGROUND_CONTEXT;
 const response: FauxResponseFactory = (transcript) => transcript.messages.some((message) => message.role === "toolResult")
@@ -21,7 +21,7 @@ const response: FauxResponseFactory = (transcript) => transcript.messages.some((
 
 const test = base.extend<{ dataDirectory: string }>({
   dataDirectory: async ({}, use) => {
-    const directory = await mkdtemp(join(tmpdir(), "pi-ui-interaction-"));
+    const directory = await mkdtemp(join(tmpdir(), "pi-ui-human-input-"));
     try {
       await use(directory);
     } finally {
@@ -36,12 +36,12 @@ async function open(dataDirectory: string) {
   return host;
 }
 
-async function pending(host: LocalPiHost, conversation: Conversation): Promise<HumanInputDetails> {
-  let found: HumanInputDetails | undefined;
+async function pending(host: LocalPiHost, conversation: Conversation): Promise<PiDurableHumanInputDetails> {
+  let found: PiDurableHumanInputDetails | undefined;
   await expect.poll(async () => {
     const live = await host.harness.snapshot(LiveDoc, conversation.id, context);
     const slot = live?.tools?.find((tool) => tool.name === HUMAN_INPUT_TOOL_NAME);
-    found = slot?.details as HumanInputDetails | undefined;
+    found = slot?.details as PiDurableHumanInputDetails | undefined;
     return found?.status;
   }).toBe("pending");
   return found!;

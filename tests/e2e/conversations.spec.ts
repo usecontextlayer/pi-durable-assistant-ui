@@ -28,30 +28,29 @@ const test = base.extend<{ streamingDemoUrl: string }, { demoUrl: string }>({
   },
 });
 
-async function createConversation(page: Page) {
-  const response = page.waitForResponse((candidate) => candidate.url().endsWith("/api/conversations") && candidate.request().method() === "POST" && candidate.status() === 201);
+async function createConversation(page: Page, content: string) {
   await page.getByRole("button", { name: "New conversation", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Pi Durable");
+  const response = page.waitForResponse((candidate) => candidate.url().endsWith("/api/conversations") && candidate.request().method() === "POST" && candidate.status() === 201);
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill(content);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   const conversation = await (await response).json();
   const title = `Conversation ${conversation.id}`;
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(title);
-  await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`conversation=${conversation.id}`));
   return title;
 }
 
 test("a person can create, switch and reopen native conversations", async ({ page, demoUrl }) => {
   await page.goto(demoUrl);
-  const firstConversation = await createConversation(page);
+  const firstConversation = await createConversation(page, "First browser conversation");
   const heading = page.getByRole("heading", { level: 1 });
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("First browser conversation");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator('[data-role="user"] .message-content')).toHaveText("First browser conversation");
   await expect(page.locator('[data-role="assistant"]')).toContainText("You said: First browser conversation");
   await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
 
-  const secondConversation = await createConversation(page);
+  const secondConversation = await createConversation(page, "Second browser conversation");
   expect(secondConversation).not.toBe(firstConversation);
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Second browser conversation");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator('[data-role="assistant"]')).toContainText("You said: Second browser conversation");
   await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
 
@@ -72,11 +71,9 @@ test("a person can create, switch and reopen native conversations", async ({ pag
 
 test("editing, regenerating and resetting use native conversations and active context", async ({ page, demoUrl }) => {
   await page.goto(demoUrl);
-  const originalTitle = await createConversation(page);
+  const originalTitle = await createConversation(page, "Original message for editing");
   const heading = page.getByRole("heading", { level: 1 });
   const originalId = originalTitle.split(" ")[1];
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Original message for editing");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator('[data-role="assistant"]')).toContainText("You said: Original message for editing");
   await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
 
@@ -123,7 +120,7 @@ test("editing, regenerating and resetting use native conversations and active co
 
 test("image attachments and native file tools render in the full interface", async ({ page, demoUrl }) => {
   await page.goto(demoUrl);
-  await createConversation(page);
+  await page.getByRole("button", { name: "New conversation", exact: true }).click();
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Attach files", exact: true }).click();
   await (await chooser).setFiles({
@@ -151,12 +148,10 @@ test("image attachments and native file tools render in the full interface", asy
   expect(JSON.stringify(history.items)).toContain('"mimeType":"image/png"');
 });
 
-test("titles, archive state and feedback persist in the native conversation", async ({ page, demoUrl }) => {
+test("titles and feedback persist while unsupported archive and delete controls are absent", async ({ page, demoUrl }) => {
   await page.goto(demoUrl);
-  const originalTitle = await createConversation(page);
+  const originalTitle = await createConversation(page, "A response worth keeping");
   const id = originalTitle.split(" ")[1];
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("A response worth keeping");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator('[data-role="assistant"]')).toContainText("You said: A response worth keeping");
   await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark helpful", exact: true }).click();
@@ -167,32 +162,23 @@ test("titles, archive state and feedback persist in the native conversation", as
   await page.getByRole("textbox", { name: "Conversation title", exact: true }).fill("Saved local conversation");
   await page.getByRole("button", { name: "Save title", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Saved local conversation");
-  await page.getByLabel("Actions for Saved local conversation", { exact: true }).click();
-  await page.getByRole("button", { name: "Archive", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Saved local conversation", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Archived conversations", exact: true }).click();
-  await page.getByRole("button", { name: "Saved local conversation", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved local conversation", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Archive", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Saved local conversation");
   await expect(page.locator('[data-role="assistant"]')).toContainText("A response worth keeping");
-  const archived = await (await page.request.get(`${demoUrl}/api/conversations/${id}/metadata`)).json();
-  expect(archived).toMatchObject({ title: "Saved local conversation", archived: true });
-  expect(Object.values(archived.feedback)).toEqual(["positive"]);
+  const metadata = await (await page.request.get(`${demoUrl}/api/conversations/${id}/metadata`)).json();
+  expect(metadata.title).toBe("Saved local conversation");
+  expect(metadata).not.toHaveProperty("archived");
+  expect(Object.values(metadata.feedback)).toEqual(["positive"]);
 
-  await page.getByRole("button", { name: "Archived conversations", exact: true }).click();
-  await page.getByLabel("Actions for Saved local conversation", { exact: true }).click();
-  await page.getByRole("button", { name: "Unarchive", exact: true }).click();
-  await page.getByRole("button", { name: "Active conversations", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Saved local conversation", exact: true })).toBeVisible();
-  expect((await (await page.request.get(`${demoUrl}/api/conversations/${id}/metadata`)).json()).archived).toBe(false);
 });
 
-test("a pending human interaction survives reload and the response completes its native tool", async ({ page, demoUrl }) => {
+test("pending human input survives reload and the response completes its native tool", async ({ page, demoUrl }) => {
   await page.goto(demoUrl);
-  const title = await createConversation(page);
+  const title = await createConversation(page, "/approval");
   const id = title.split(" ")[1];
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("/approval");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Pi needs your input", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Pi needs your input", exact: true })).toBeVisible();
@@ -207,10 +193,8 @@ test("a pending human interaction survives reload and the response completes its
 
 test("forking from an edited user message retains the revision in native context", async ({ page, demoUrl }) => {
   await page.goto(demoUrl);
-  const originalTitle = await createConversation(page);
+  const originalTitle = await createConversation(page, "Original prompt before revision");
   const originalId = originalTitle.split(" ")[1];
-  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Original prompt before revision");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator('[data-role="assistant"]')).toContainText("You said: Original prompt before revision");
   await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
   const originalHistory = await (await page.request.get(`${demoUrl}/api/conversations/${originalId}/entries`)).json();
@@ -328,6 +312,7 @@ test("independent browsers converge after a streaming connection goes offline an
     expect(nativeIds).toHaveLength(2);
     for (const observer of [page, otherPage]) {
       await expect(observer.locator('[data-role="assistant"]')).toHaveCount(2);
+      for (const message of await observer.locator('[data-role="assistant"]').all()) await expect(message).toHaveAttribute("data-branch-count", "1");
       await expect(observer.locator('[data-role="user"]')).toHaveCount(2);
       expect(await observer.locator('[data-role="assistant"]').evaluateAll((elements) => elements.map((element) => element.getAttribute("data-entry-id")))).toEqual(nativeIds);
     }
@@ -336,4 +321,55 @@ test("independent browsers converge after a streaming connection goes offline an
     await session.detach();
     await otherContext.close();
   }
+});
+
+
+test("new drafts do not persist empty native conversations", async ({ page, demoUrl }) => {
+  const before = await (await page.request.get(`${demoUrl}/api/conversations`)).json();
+  await page.goto(demoUrl);
+  for (let index = 0; index < 3; index += 1) await page.getByRole("button", { name: "New conversation", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Pi Durable");
+  expect(await (await page.request.get(`${demoUrl}/api/conversations`)).json()).toEqual(before);
+  await createConversation(page, "Initialize this native conversation once");
+  const after = await (await page.request.get(`${demoUrl}/api/conversations`)).json();
+  expect(after.items).toHaveLength(before.items.length + 1);
+});
+
+test("a title changed by another browser reaches the open thread and directory", async ({ page, browser, demoUrl }) => {
+  await page.goto(demoUrl);
+  const title = await createConversation(page, "Observe native metadata");
+  const other = await browser.newContext();
+  try {
+    const observer = await other.newPage();
+    await observer.goto(page.url());
+    await expect(observer.getByRole("heading", { level: 1 })).toHaveText(title);
+    await page.getByLabel(`Actions for ${title}`, { exact: true }).click();
+    await page.getByRole("button", { name: "Rename", exact: true }).click();
+    await page.getByRole("textbox", { name: "Conversation title", exact: true }).fill("Observed from another browser");
+    await page.getByRole("button", { name: "Save title", exact: true }).click();
+    await expect(observer.getByRole("heading", { level: 1 })).toHaveText("Observed from another browser");
+    await expect(observer.getByRole("button", { name: "Observed from another browser", exact: true })).toBeVisible();
+  } finally {
+    await other.close();
+  }
+});
+
+test("the composer queues and steers native submissions during a run", async ({ page, demoUrl }) => {
+  await page.goto(demoUrl);
+  const title = await createConversation(page, "/slow");
+  const id = title.split(" ")[1];
+  await expect(page.locator(".tool-result")).toContainText("Starting slow native tool");
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Withdraw this queued follow-up");
+  await page.getByRole("button", { name: "Queue follow-up", exact: true }).click();
+  await expect.poll(async () => (await (await page.request.get(`${demoUrl}/api/conversations/${id}`)).json()).docs["pi.inbox"].items.map((item: { mode: string }) => item.mode)).toEqual(["followUp"]);
+  await page.getByText("Conversation controls", { exact: true }).click();
+  await page.getByText("Execution, inbox and usage", { exact: true }).click();
+  await page.getByRole("button", { name: /^Withdraw submission/ }).click();
+  await page.getByRole("textbox", { name: "Message", exact: true }).fill("Steer the active native run");
+  await page.getByRole("textbox", { name: "Message", exact: true }).press("Enter");
+  await expect.poll(async () => (await (await page.request.get(`${demoUrl}/api/conversations/${id}`)).json()).docs["pi.inbox"].items.map((item: { mode: string }) => item.mode)).toEqual(["steer"]);
+  await expect(page.getByRole("status").filter({ hasText: /^Connected$/ })).toBeVisible();
+  const history = await (await page.request.get(`${demoUrl}/api/conversations/${id}/entries`)).json();
+  expect(JSON.stringify(history)).toContain("Steer the active native run");
+  expect(JSON.stringify(history)).not.toContain("Withdraw this queued follow-up");
 });

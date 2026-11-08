@@ -1,5 +1,7 @@
+import type { PiDurableHumanInputDetails } from "./client.js";
 import type { AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import { CompactionEntry, ResetEntry, SystemEntry } from "@earendil-works/pi-durable";
 import type { ContextEdit, EntryId, EntryRecord, InboxState, LiveState, TranscriptView, UserInput } from "@earendil-works/pi-durable";
 import type { ConversationMetadata } from "./metadata.js";
 
@@ -46,9 +48,11 @@ function assistantContent(message: AssistantMessage, calls: Map<string, ToolPart
 
 function applyToolResult(tool: ToolPart, message: ToolResultMessage): void {
   Object.assign(tool, {
-    result: message.details ?? message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"),
+    artifact: message.details,
+    result: message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"),
     isError: message.isError,
     isPreliminary: false,
+    approval: humanInputApproval(message.details),
     modelContent: message.content.map((part) => part.type === "text"
       ? { type: "text", text: part.text }
       : { type: "file", mediaType: part.mimeType, data: part.data }),
@@ -62,12 +66,11 @@ function messageStatus(message: AssistantMessage): ThreadMessageLike["status"] {
   return { type: "complete", reason: "stop" };
 }
 
-/** Pure projection: native entries keep their IDs; tool results join their calls by call ID. */
-export function projectConversation(view: TranscriptView, presentation?: ConversationMetadata): readonly ThreadMessageLike[] {
+export function projectConversationHistory(items: TranscriptView["items"], conversationMetadata?: ConversationMetadata) {
   const messages: MutableMessage[] = [];
   const calls = new Map<string, ToolPart>();
   const edits = new Map<EntryId, { change: ContextEdit; by: EntryId }>();
-  for (const item of view.items) {
+  for (const item of items) {
     if (item.kind === "entry") {
       for (const change of item.entry.edits ?? []) edits.set(change.target, { change, by: item.entry.id });
     }
@@ -79,7 +82,7 @@ export function projectConversation(view: TranscriptView, presentation?: Convers
     if (message.role === "user") {
       messages.push({ id, role: "user", content: userContent(message.content), createdAt: new Date(message.timestamp), metadata });
     } else if (message.role === "assistant") {
-      const feedback = presentation?.feedback[entry.id];
+      const feedback = conversationMetadata?.feedback[entry.id];
       messages.push({ id, role: "assistant", content: assistantContent(message, calls), status: messageStatus(message), createdAt: new Date(message.timestamp), metadata: { ...metadata, ...(feedback ? { submittedFeedback: { type: feedback } } : {}) } });
     } else if (message.role === "toolResult") {
       let tool = calls.get(message.toolCallId);
@@ -92,15 +95,15 @@ export function projectConversation(view: TranscriptView, presentation?: Convers
     }
   }
 
-  for (const item of view.items) {
+  for (const item of items) {
     if (item.kind !== "entry") continue;
     const entry = item.entry;
-    if (entry.kind === "pi.system") continue;
-    if (entry.kind === "pi.compaction" || entry.kind === "pi.reset") {
+    if (SystemEntry.is(entry)) continue;
+    if (CompactionEntry.is(entry) || ResetEntry.is(entry)) {
       messages.push({
         id: `entry:${entry.id}:notice`,
         role: "assistant",
-        content: [{ type: "text", text: entry.kind === "pi.reset" ? "Conversation context reset" : "Conversation context compacted" }],
+        content: [{ type: "data", name: "pi-context", data: { kind: entry.kind, data: entry.data } }],
         metadata: { custom: { conversationId: entry.conversationId, entryId: entry.id, entryKind: entry.kind, entryData: entry.data } },
       });
     }
@@ -109,16 +112,21 @@ export function projectConversation(view: TranscriptView, presentation?: Convers
     for (const [index, message] of model.entries()) append(entry, message, index);
   }
 
-  const live = conversationLiveState(view);
+  return { messages, calls };
+}
+
+export function projectConversationLive(history: ReturnType<typeof projectConversationHistory>, live: LiveState, conversationId: TranscriptView["conversation"]["id"]): readonly ThreadMessageLike[] {
+  const messages = [...history.messages];
+  const calls = new Map(history.calls);
   if (live.generation?.message) {
     const message = live.generation.message as AssistantMessage;
     messages.push({
-      id: `generation:${live.run?.taskId ?? view.conversation.id}`,
+      id: `generation:${live.run?.taskId ?? conversationId}`,
       role: "assistant",
       content: assistantContent(message, calls),
       status: { type: "running" },
       createdAt: new Date(message.timestamp),
-      metadata: { custom: { conversationId: view.conversation.id, taskId: live.run?.taskId } },
+      metadata: { isOptimistic: true, custom: { conversationId, taskId: live.run?.taskId } },
     });
   }
   for (const slot of live.tools ?? []) {
@@ -126,15 +134,34 @@ export function projectConversation(view: TranscriptView, presentation?: Convers
     if (!tool) {
       tool = { type: "tool-call", toolCallId: slot.callId, toolName: slot.name, args: {} };
       calls.set(slot.callId, tool);
-      messages.push({ id: `tool:${slot.callId}`, role: "assistant", content: [tool], status: { type: "running" } });
+      messages.push({ id: `tool:${slot.callId}`, role: "assistant", content: [tool], status: { type: "running" }, metadata: { isOptimistic: true } });
     }
     if (slot.status !== "done") {
-      Object.assign(tool, { result: slot.details ?? slot.output, isPreliminary: true });
-      const owner = messages.find((message) => message.content.includes(tool));
-      if (owner) owner.status = { type: "running" };
+      const ownerIndex = messages.findIndex((message) => message.content.includes(tool));
+      const owner = messages[ownerIndex]!;
+      const updated = { ...tool, result: slot.output, artifact: slot.details, isPreliminary: true, approval: humanInputApproval(slot.details) };
+      calls.set(slot.callId, updated);
+      messages[ownerIndex] = { ...owner, content: owner.content.map((part) => part === tool ? updated : part), status: { type: "running" } };
     }
   }
+  const failure = live.runFailure;
+  const lastStatus = messages.at(-1)?.status;
+  if (failure && failure.reason !== "aborted" && failure.reason !== "reset" && failure.reason !== "nothing_to_answer" && !(lastStatus?.type === "incomplete" && lastStatus.reason === "error")) {
+    messages.push({ id: `failure:${failure.taskId}`, role: "assistant", content: [], status: { type: "incomplete", reason: "error", error: failure.detail ?? failure.reason }, metadata: { isOptimistic: true, custom: { conversationId, taskId: failure.taskId } } });
+  }
   return messages;
+}
+
+/** Pure projection of Pi history and current execution; Pi retains the durable originals. */
+export function projectConversation(view: TranscriptView, metadata?: ConversationMetadata): readonly ThreadMessageLike[] {
+  return projectConversationLive(projectConversationHistory(view.items, metadata), conversationLiveState(view), view.conversation.id);
+}
+
+function humanInputApproval(value: unknown): ToolPart["approval"] {
+  if (value === null || typeof value !== "object") return undefined;
+  const details = value as Partial<PiDurableHumanInputDetails>;
+  if (details.type !== "human-input" || typeof details.taskId !== "number" || typeof details.prompt !== "string" || (details.status !== "pending" && details.status !== "answered")) return undefined;
+  return { id: String(details.taskId), prompt: details.prompt, display: "text", ...(details.status === "answered" ? { approved: true, text: details.response } : {}) };
 }
 
 /** Convert only the user's new input; never send the rendered transcript back to Pi. */

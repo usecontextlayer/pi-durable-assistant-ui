@@ -1,6 +1,6 @@
+import type { WatchHandle } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type {
-  Conversation,
   ConversationId,
   ConversationQuery,
   ConversationWindow,
@@ -11,13 +11,13 @@ import type {
   SubmissionId,
   TaskId,
 } from "@earendil-works/pi-durable";
-import type { ConversationMetadataPatch, HttpPiWatchFrame, SerializedConversationCreateOptions } from "@usecontextlayer/pi-durable-assistant-ui";
+import type { ConversationMetadataPatch, HttpPiDurableWatchFrame, HttpPiDurableWatchSubscription, SerializedConversationCreateOptions } from "@usecontextlayer/pi-durable-assistant-ui";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { LocalPiHost } from "./host.js";
 import { readUploadedFile, storeUploadedFile } from "./env.js";
 import { DEMO_SCENARIOS } from "../scenarios/faux-provider.js";
-import { respondToHumanInput } from "./interaction.js";
-import { createLocalPiClient } from "./local-client.js";
+import { respondToHumanInput } from "./human-input.js";
+import { createLocalPiDurableClient } from "./local-client.js";
 import { NotFoundError } from "./errors.js";
 
 type Fallback = (request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => void;
@@ -82,56 +82,69 @@ function order(url: URL): "ascending" | "descending" | undefined {
   return value;
 }
 
-async function sendWatch(conversation: Conversation, url: URL, response: ServerResponse) {
-  let disconnected = false;
-  const closed = new Promise<void>((resolve) => {
-    response.once("close", () => {
-      disconnected = true;
-      resolve();
-    });
+async function sendWatches(client: ReturnType<typeof createLocalPiDurableClient>, requests: HttpPiDurableWatchSubscription[], response: ServerResponse) {
+  const controller = new AbortController();
+  response.once("close", () => controller.abort());
+  response.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
-  const watch = await conversation.watch(BACKGROUND_CONTEXT, jsonParameter<ConversationWindow>(url, "window"));
-  try {
-    if (disconnected) return;
-    response.writeHead(200, {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
+  response.flushHeaders();
+  const send = async <T>(subscriptionId: number, frame: HttpPiDurableWatchFrame<T>) => {
+    if (controller.signal.aborted) return;
+    if (response.write(`data: ${JSON.stringify({ subscriptionId, frame })}\n\n`)) return;
+    await new Promise<void>((resolve) => {
+      const done = () => { response.off("drain", done); response.off("close", done); resolve(); };
+      response.once("drain", done);
+      response.once("close", done);
     });
-    response.flushHeaders();
-    const send = async (frame: HttpPiWatchFrame) => {
-      if (disconnected) return;
-      if (response.write(`data: ${JSON.stringify(frame)}\n\n`)) return;
-      await new Promise<void>((resolve) => {
-        const done = () => {
-          response.off("drain", done);
-          response.off("close", done);
-          resolve();
-        };
-        response.once("drain", done);
-        response.once("close", done);
+  };
+  async function stream<T>(request: HttpPiDurableWatchSubscription, acquire: () => Promise<WatchHandle<T>>) {
+    let watch: WatchHandle<T> | undefined;
+    try {
+      watch = await acquire();
+      await send(request.subscriptionId, { type: "view", view: watch.value });
+      watch.start(async (change) => {
+        if (change.kind === "value") await send(request.subscriptionId, { type: "ops", ops: change.ops });
+        else await send(request.subscriptionId, { type: "failed", error: change.error instanceof Error ? change.error.message : String(change.error) });
       });
-    };
-    await send({ type: "view", view: watch.value });
-    watch.start(async (change) => {
-      if (change.kind === "value") await send({ type: "ops", ops: change.ops });
-    });
-    await closed;
-  } finally {
-    await watch.stop();
+      const end = await watch.closed;
+      await send(request.subscriptionId, { type: "end", kind: end.kind, ...("error" in end ? { error: end.error instanceof Error ? end.error.message : String(end.error) } : {}) });
+    } catch (error) {
+      await send(request.subscriptionId, { type: "end", kind: "failed", error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      await watch?.stop();
+    }
   }
+  await Promise.all(requests.map((request) => request.kind === "conversation"
+    ? stream(request, () => client.watch(request.id, { signal: controller.signal, window: () => request.window }))
+    : stream(request, () => client.watchMetadata(request.id, controller.signal))));
+  if (!controller.signal.aborted) response.end();
 }
 
-async function handleApi(piHost: LocalPiHost, client: ReturnType<typeof createLocalPiClient>, request: IncomingMessage, response: ServerResponse) {
+async function handleApi(piHost: LocalPiHost, client: ReturnType<typeof createLocalPiDurableClient>, request: IncomingMessage, response: ServerResponse) {
   const url = new URL(request.url ?? "/", "http://localhost");
   const method = request.method ?? "GET";
 
-  const interaction = /^\/api\/interactions\/(\d+)$/.exec(url.pathname);
-  if (interaction && method === "POST") {
+  if (url.pathname === "/api/watch" && method === "GET") {
+    const requests = jsonParameter<HttpPiDurableWatchSubscription[]>(url, "subscriptions");
+    if (!Array.isArray(requests) || requests.length === 0) throw new HttpError(400, "Watch subscriptions are required.");
+    for (const request of requests) {
+      id(request.subscriptionId, "subscription ID");
+      id(request.id, "conversation ID");
+      if (request.kind !== "conversation" && request.kind !== "metadata") throw new HttpError(400, "Invalid watch kind.");
+    }
+    await sendWatches(client, requests, response);
+    return;
+  }
+
+  const humanInput = /^\/api\/human-input\/(\d+)$/.exec(url.pathname);
+  if (humanInput && method === "POST") {
     const input = await body(request);
     if (typeof input.response !== "string") throw new HttpError(400, "Human response must be text.");
-    json(response, await respondToHumanInput(piHost.harness, id<TaskId>(interaction[1], "task ID"), input.response, BACKGROUND_CONTEXT));
+    json(response, await respondToHumanInput(piHost.harness, id<TaskId>(humanInput[1], "task ID"), input.response, BACKGROUND_CONTEXT));
     return;
   }
 
@@ -169,8 +182,11 @@ async function handleApi(piHost: LocalPiHost, client: ReturnType<typeof createLo
     json(response, await piHost.harness.usage(BACKGROUND_CONTEXT));
     return;
   }
-  if (url.pathname === "/api/conversations/metadata" && method === "GET") {
-    json(response, await client.listMetadata());
+  if (url.pathname === "/api/conversations/metadata" && method === "POST") {
+    const input = await body(request);
+    if (!Array.isArray(input.ids)) throw new HttpError(400, "Conversation IDs must be an array.");
+    const ids = input.ids.map((value) => id<ConversationId>(value, "conversation ID"));
+    json(response, await client.listMetadata(ids));
     return;
   }
   if (url.pathname === "/api/conversations") {
@@ -217,7 +233,7 @@ async function handleApi(piHost: LocalPiHost, client: ReturnType<typeof createLo
   if (method === "PATCH" && action === "metadata") {
     const update = await body(request);
     if (update.title !== undefined && update.title !== null && typeof update.title !== "string") throw new HttpError(400, "Title must be text or null.");
-    if (update.archived !== undefined && typeof update.archived !== "boolean") throw new HttpError(400, "Archived must be a boolean.");
+    if ("archived" in update) throw new HttpError(400, "Pi Durable does not support archiving conversations.");
     if (update.suggestions !== undefined && (!Array.isArray(update.suggestions) || update.suggestions.some((value) => typeof value !== "string"))) throw new HttpError(400, "Suggestions must be text values.");
     json(response, await client.updateMetadata(selectedId, update as ConversationMetadataPatch));
     return;
@@ -226,12 +242,6 @@ async function handleApi(piHost: LocalPiHost, client: ReturnType<typeof createLo
     const input = await body(request);
     if (input.rating !== null && input.rating !== "positive" && input.rating !== "negative") throw new HttpError(400, "Feedback must be positive, negative, or null.");
     json(response, await client.setFeedback(selectedId, id<EntryId>(input.entryId as number, "entry ID"), input.rating));
-    return;
-  }
-  if (method === "GET" && action === "watch") {
-    const selected = await piHost.harness.conversation(selectedId, BACKGROUND_CONTEXT);
-    if (!selected) throw new NotFoundError("Conversation not found.");
-    await sendWatch(selected, url, response);
     return;
   }
   if (method === "GET" && !action) {
@@ -306,7 +316,7 @@ async function handleApi(piHost: LocalPiHost, client: ReturnType<typeof createLo
 }
 
 export function createApiServer(piHost: LocalPiHost, options: { fallback?: Fallback } = {}) {
-  const client = createLocalPiClient(piHost);
+  const client = createLocalPiDurableClient(piHost);
   return createServer((request, response) => {
     if (!request.url?.startsWith("/api/")) {
       if (options.fallback) {
@@ -323,6 +333,11 @@ export function createApiServer(piHost: LocalPiHost, options: { fallback?: Fallb
         response.writeHead(404);
         response.end("Not found");
       }
+      return;
+    }
+    const site = request.headers["sec-fetch-site"];
+    if (site !== undefined && site !== "same-origin" && site !== "none") {
+      json(response, { error: "Cross-origin API requests are not allowed." }, 403);
       return;
     }
     void handleApi(piHost, client, request, response).catch((error: unknown) => {

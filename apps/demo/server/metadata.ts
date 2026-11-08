@@ -13,7 +13,6 @@ import { NotFoundError } from "./errors.js";
 function initialMetadata(): ConversationMetadata {
   return {
     title: null,
-    archived: false,
     feedback: {},
     suggestions: [
       "Explain how this conversation remembers context",
@@ -24,14 +23,14 @@ function initialMetadata(): ConversationMetadata {
 }
 
 export const ConversationMetadataDoc = defineDoc<ConversationMetadata>({
-  kind: "demo.presentation",
+  kind: "demo.metadata",
   version: 1,
   scope: "conversation",
   history: "latest",
-  // A fork is a new thread: its title, archive state and local feedback start fresh.
+  // A fork is a new thread: its title and local feedback start fresh.
   fork: "initial",
   initial: initialMetadata,
-  checkpointWhen: () => false,
+  checkpointWhen: () => true,
 });
 
 function copyMetadata(value: Readonly<ConversationMetadata>): ConversationMetadata {
@@ -49,14 +48,14 @@ export async function initializeConversationMetadata(tx: Tx, record: Conversatio
   await tx.doc(ConversationMetadataDoc, record.id);
 }
 
-/** Missing metadata in older conversations reads as defaults without creating state. */
 export async function getConversationMetadata(
   harness: Harness,
   id: ConversationId,
   context: Context,
 ): Promise<ConversationMetadata> {
-  await conversation(harness, id, context);
-  return copyMetadata(await harness.snapshot(ConversationMetadataDoc, id, context) ?? initialMetadata());
+  const metadata = await harness.snapshot(ConversationMetadataDoc, id, context);
+  if (!metadata) throw new NotFoundError("Conversation metadata not found.");
+  return copyMetadata(metadata);
 }
 
 export async function updateConversationMetadata(
@@ -69,7 +68,6 @@ export async function updateConversationMetadata(
   return value.commit(async (tx) => {
     const metadata = await tx.doc(ConversationMetadataDoc, id);
     if (update.title !== undefined) metadata.title = update.title;
-    if (update.archived !== undefined) metadata.archived = update.archived;
     if (update.suggestions !== undefined) metadata.suggestions = [...update.suggestions];
     return copyMetadata(metadata);
   }, context);
@@ -95,8 +93,8 @@ export async function setConversationFeedback(
 
 export async function listConversationMetadata(
   harness: Harness,
-  records: readonly ConversationRecord[],
+  ids: readonly ConversationId[],
   context: Context,
-): Promise<(ConversationMetadata & Pick<ConversationRecord, "id">)[]> {
-  return Promise.all(records.map(async ({ id }) => ({ id, ...await getConversationMetadata(harness, id, context) })));
+): Promise<Record<string, ConversationMetadata>> {
+  return Object.fromEntries(await Promise.all(ids.map(async (id) => [String(id), await getConversationMetadata(harness, id, context)])));
 }

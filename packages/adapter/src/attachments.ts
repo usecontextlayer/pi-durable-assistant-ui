@@ -1,8 +1,8 @@
 import type { AttachmentAdapter, CompleteAttachment } from "@assistant-ui/react";
-import type { PiUploadResult } from "./client.js";
+import type { PiDurableUploadResult } from "./client.js";
 
 /** Uploads at send time; the host decides which native Pi input represents the file. */
-export function createPiAttachmentAdapter(upload: (file: File, signal?: AbortSignal) => Promise<PiUploadResult>): AttachmentAdapter {
+export function createPiDurableAttachmentAdapter(upload: (file: File, signal?: AbortSignal) => Promise<PiDurableUploadResult>): AttachmentAdapter {
   return {
     accept: "*",
     async add({ file }) {

@@ -1,15 +1,15 @@
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
-import type { ConversationId, ConversationWatch, Cursor } from "@earendil-works/pi-durable";
-import type { PiClient } from "@usecontextlayer/pi-durable-assistant-ui";
+import type { ConversationId } from "@earendil-works/pi-durable";
+import type { PiDurableClient } from "@usecontextlayer/pi-durable-assistant-ui";
 import type { LocalPiHost } from "./host.js";
 import { storeUploadedFile } from "./env.js";
-import { respondToHumanInput } from "./interaction.js";
+import { respondToHumanInput } from "./human-input.js";
 import { resolveAgentChange } from "./agent-change.js";
 import { NotFoundError } from "./errors.js";
-import { getConversationMetadata, listConversationMetadata, setConversationFeedback, updateConversationMetadata } from "./metadata.js";
+import { ConversationMetadataDoc, getConversationMetadata, listConversationMetadata, setConversationFeedback, updateConversationMetadata } from "./metadata.js";
 
 /** The local host's native binding, shared by HTTP and direct adapter consumers. */
-export function createLocalPiClient(piHost: LocalPiHost): Required<PiClient> {
+export function createLocalPiDurableClient(piHost: LocalPiHost): Required<PiDurableClient> {
   const { harness } = piHost;
   const context = BACKGROUND_CONTEXT;
   const conversation = async (id: ConversationId) => {
@@ -46,28 +46,18 @@ export function createLocalPiClient(piHost: LocalPiHost): Required<PiClient> {
       if (!submission) throw new NotFoundError("Submission not found.");
       return submission.status(context);
     },
-    watch(id, onView, options = {}) {
-      let disposed = false;
-      let observation: ConversationWatch | undefined;
+    async watch(id, options = {}) {
+      const observationContext = options.signal ? withAbortSignal(options.signal, context) : context;
       options.onConnection?.("connecting");
-      void (async () => {
-        observation = await (await conversation(id)).watch(context, options.window?.());
-        if (disposed) {
-          await observation.stop();
-          return;
-        }
-        options.onConnection?.("connected");
-        onView(observation.value);
-        observation.start(async (change) => {
-          if (!disposed && change.kind === "value") onView(change.value);
-        });
-      })().catch((cause: unknown) => {
-        if (!disposed) options.onError?.(cause instanceof Error ? cause : new Error(String(cause)));
-      });
-      return () => {
-        disposed = true;
-        void observation?.stop();
-      };
+      const watch = await (await conversation(id)).watch(observationContext, options.window?.());
+      options.onConnection?.("connected");
+      return watch;
+    },
+    async watchMetadata(id, signal) {
+      await conversation(id);
+      const watch = await harness.watchDoc(ConversationMetadataDoc, id, signal ? withAbortSignal(signal, context) : context);
+      if (!watch) throw new NotFoundError("Conversation metadata not found.");
+      return watch;
     },
     configure: async (id, change) => (await conversation(id)).configure(resolveAgentChange(change, piHost.registry), context),
     abort: async (id, options) => (await conversation(id)).abort(context, options),
@@ -93,17 +83,7 @@ export function createLocalPiClient(piHost: LocalPiHost): Required<PiClient> {
       await respondToHumanInput(harness, taskId, response, context);
     },
     inspect: () => harness.inspect(context),
-    async listMetadata() {
-      const records = [];
-      let cursor: Cursor | undefined;
-      do {
-        const page = await harness.commit((tx) => tx.scanConversations({}, 100, cursor), context);
-        records.push(...page.items);
-        cursor = page.next;
-      } while (cursor);
-      const metadata = await listConversationMetadata(harness, records, context);
-      return Object.fromEntries(metadata.map(({ id, ...value }) => [String(id), value]));
-    },
+    listMetadata: (ids) => listConversationMetadata(harness, ids, context),
     getMetadata: (id) => getConversationMetadata(harness, id, context),
     updateMetadata: (id, patch) => updateConversationMetadata(harness, id, patch, context),
     setFeedback: (id, entryId, rating) => setConversationFeedback(harness, id, entryId, rating, context),

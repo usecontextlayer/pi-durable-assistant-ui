@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Approved standalone Node/Pi Durable host, Vite/React demo, Assistant UI primitives and ExternalStoreRuntime adapter. The ExecPlan owns feature scope and native identity/lifecycle constraints.
+Standalone Node/Pi Durable host, Vite/React demo, Assistant UI primitives, remote thread-list lifecycle and conversation-scoped ExternalStoreRuntime integration. The [adapter contract](packages/adapter/README.md) owns native identity and lifecycle boundaries; [feature coverage](FEATURES.md) owns supported capabilities and their verification limits. Assistant UI itself remains unchanged.
 
 ## Users and purpose
 

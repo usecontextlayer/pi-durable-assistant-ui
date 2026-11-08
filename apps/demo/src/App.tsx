@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActionBarPrimitive,
   AttachmentPrimitive,
@@ -15,17 +15,17 @@ import {
   WebSpeechSynthesisAdapter,
   useAui,
   useAuiState,
-  type ToolCallMessagePartProps,
+  type DataMessagePartProps,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { createHttpPiClient, createPiAttachmentAdapter, usePiRuntime, type SerializedAgentChange, type ConversationId } from "@usecontextlayer/pi-durable-assistant-ui";
-import type { AgentState, EntryId } from "@earendil-works/pi-durable";
+import { createHttpPiDurableClient, createPiDurableAttachmentAdapter, usePiDurableRuntime, usePiDurable, type SerializedAgentChange, type ConversationId } from "@usecontextlayer/pi-durable-assistant-ui";
+import { ResetEntry, CompactionEntry, type AgentState, type EntryId } from "@earendil-works/pi-durable";
 import { PiControls, type RegisteredModel } from "./PiControls";
 import { HumanInputTool, toolRenderers } from "./ToolRenderers";
 import { HarnessInspector } from "./HarnessInspector";
 
-const client = createHttpPiClient({ baseUrl: "/api" });
-const attachments = createPiAttachmentAdapter(client.uploadFile);
+const client = createHttpPiDurableClient({ baseUrl: "/api" });
+const attachments = createPiDurableAttachmentAdapter(client.uploadFile);
 const speech = typeof window !== "undefined" && "speechSynthesis" in window ? new WebSpeechSynthesisAdapter() : undefined;
 const dictation = WebSpeechDictationAdapter.isSupported() ? new WebSpeechDictationAdapter() : undefined;
 
@@ -34,16 +34,33 @@ const connectionLabels = {
   connecting: "Connecting",
   connected: "Connected",
   reconnecting: "Reconnecting",
+  closed: "Disconnected",
 } as const;
 
 export function App() {
-  const value = new URL(window.location.href).searchParams.get("conversation");
-  const parsedId = value === null ? undefined : Number(value);
-  const initialConversationId = parsedId !== undefined && Number.isSafeInteger(parsedId) && parsedId > 0 ? parsedId as ConversationId : undefined;
-  const [whenBusy, setWhenBusy] = useState<"followUp" | "steer">("followUp");
-  const { runtime, state, actions } = usePiRuntime({ client, initialConversationId, whenBusy, attachments, speech, dictation });
+  const [threadId, setThreadId] = useState<ConversationId | undefined>(() => {
+    const value = new URL(window.location.href).searchParams.get("conversation");
+    const id = value === null ? undefined : Number(value);
+    return id !== undefined && Number.isSafeInteger(id) && id > 0 ? id as ConversationId : undefined;
+  });
+  const onThreadIdChange = useCallback((id: ConversationId | undefined) => {
+    setThreadId(id);
+    const url = new URL(window.location.href);
+    if (id === undefined) url.searchParams.delete("conversation");
+    else url.searchParams.set("conversation", String(id));
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+  const runtime = usePiDurableRuntime({ client, threadId, onThreadIdChange, attachments, speech, dictation });
+  return <AssistantRuntimeProvider runtime={runtime}><ChatApp /></AssistantRuntimeProvider>;
+}
+
+function ChatApp() {
+  const aui = useAui();
+  const { conversation, state } = usePiDurable();
+  const id = conversation?.id;
+  const threads = useAuiState((s) => s.threads);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const [defaultAgent, setDefaultAgent] = useState<SerializedAgentChange>();
   const [models, setModels] = useState<readonly RegisteredModel[]>([]);
   const [metadataError, setMetadataError] = useState<Error>();
@@ -65,15 +82,9 @@ export function App() {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    setSidebarOpen(false);
-    const url = new URL(window.location.href);
-    if (state.selectedId === undefined) url.searchParams.delete("conversation");
-    else url.searchParams.set("conversation", String(state.selectedId));
-    window.history.replaceState(window.history.state, "", url);
-  }, [state.selectedId]);
+  useEffect(() => { setSidebarOpen(false); }, [id]);
 
-  const model = state.selectedId === undefined
+  const model = id === undefined
     ? defaultAgent?.model
     : (state.view?.docs["pi.agent"] as AgentState | undefined)?.model;
   const modelLabel = model
@@ -85,20 +96,18 @@ export function App() {
       : state.isLoading || !defaultAgent
         ? "Loading model…"
         : "No model configured";
-  const visibleCount = state.conversations.filter((conversation) => Boolean(state.metadata[String(conversation.id)]?.archived) === showArchived).length;
-  const conversationTitle = state.selectedId === undefined ? "Pi Durable" : state.metadata[String(state.selectedId)]?.title ?? `Conversation ${state.selectedId}`;
-
-  const retry = () => {
-    if (state.selectedId !== undefined) {
-      void actions.selectConversation(state.selectedId);
-    } else {
-      void actions.refreshConversations();
-    }
+  const conversationTitle = id === undefined ? "Pi Durable" : state.metadata.title ?? `Conversation ${id}`;
+  const error = state.error ?? threads.loadError ?? threads.switchError?.error;
+  const selectConversation = (value: ConversationId) => aui.threads().switchToThread(String(value));
+  const fork = async (entryId: EntryId) => {
+    if (!conversation) throw new Error("Select a conversation before forking");
+    const created = await conversation.forkAt(entryId);
+    selectConversation(created.id);
   };
+  const retry = () => { void aui.threads().reloadMainThread(); };
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <div className="app-shell">
+    <div className="app-shell">
         {sidebarOpen ? (
           <button
             className="sidebar-backdrop"
@@ -109,19 +118,20 @@ export function App() {
         <aside className="sidebar" data-open={sidebarOpen} aria-label="Conversations">
           <div className="sidebar-heading">Pi Durable</div>
           <ThreadListPrimitive.Root className="conversation-list">
-            <ThreadListPrimitive.New className="new-conversation" onClick={() => setShowArchived(false)}>
+            <ThreadListPrimitive.New className="new-conversation">
               New conversation
             </ThreadListPrimitive.New>
-            <h2 className="list-heading">{showArchived ? "Archived conversations" : "Conversations"}</h2>
-            {state.isLoading && state.conversations.length === 0 ? (
+            <h2 className="list-heading">Conversations</h2>
+            {threads.isLoading && threads.threadIds.length === 0 ? (
               <p className="sidebar-note" role="status">Loading conversations…</p>
             ) : null}
-            <ThreadListPrimitive.Items archived={showArchived} components={{ ThreadListItem: ConversationItem }} />
-            {!state.isLoading && visibleCount === 0 ? (
-              <p className="sidebar-note">{showArchived ? "No archived conversations." : "Your conversations will appear here."}</p>
+            <ThreadListPrimitive.Items components={{ ThreadListItem: ConversationItem }} />
+            {!threads.isLoading && threads.threadIds.length === 0 ? (
+              <p className="sidebar-note">Your conversations will appear here.</p>
             ) : null}
           </ThreadListPrimitive.Root>
-          <button className="archive-toggle" aria-pressed={showArchived} onClick={() => setShowArchived(!showArchived)}>{showArchived ? "Active conversations" : "Archived conversations"}</button>
+          {threads.hasMore ? <button className="directory-refresh" disabled={threads.isLoadingMore} onClick={() => void aui.threads().loadMore()}>Load more conversations</button> : null}
+          <button className="directory-refresh" onClick={() => void aui.threads().reload()}>Refresh conversations</button>
           <p className="sidebar-footer">History is saved locally with Pi.</p>
         </aside>
 
@@ -142,36 +152,24 @@ export function App() {
               <span className="model-label" title={metadataError?.message}>{modelLabel}</span>
             </div>
             <span className="connection-status" role="status" aria-live="polite">
-              {state.isRunning ? "Working" : connectionLabels[state.connection]}
+              {isRunning ? "Working" : connectionLabels[state.connection]}
             </span>
           </header>
 
-          {state.error ? (
+          {error ? (
             <div className="connection-error" role="alert">
-              <span>{state.error.message}</span>
+              <span>{error instanceof Error ? error.message : String(error)}</span>
               <button onClick={retry}>Retry connection</button>
             </div>
           ) : null}
 
-          <PiControls
-            key={state.selectedId ?? "new"}
-            client={client}
-            state={state}
-            actions={actions}
-            models={models}
-          />
-          <HarnessInspector
-            load={async () => {
-              const [inspection] = await Promise.all([client.inspect(), actions.refreshConversations()]);
-              return inspection;
-            }}
-            onSelectConversation={actions.selectConversation}
-          />
+          {conversation ? <PiControls key={conversation.id} client={client} state={state} actions={conversation} models={models} onSelectConversation={selectConversation} /> : null}
+          <HarnessInspector load={async () => { const [inspection] = await Promise.all([client.inspect(), aui.threads().reload()]); return inspection; }} onSelectConversation={selectConversation} />
 
           <ThreadPrimitive.Root className="thread">
             <ThreadPrimitive.Viewport className="thread-viewport">
               <div className="thread-content">
-                {state.hasEarlier ? (
+                {state.view?.items[0]?.kind === "earlier" ? (
                   <ThreadPrimitive.LoadEarlier className="load-earlier">
                     <AuiIf condition={(s) => s.thread.isLoadingEarlier}>
                       Loading earlier messages…
@@ -196,7 +194,7 @@ export function App() {
                       entryId={typeof message.metadata.custom.entryId === "number" ? message.metadata.custom.entryId as EntryId : undefined}
                       editEntryId={typeof message.metadata.custom.editEntryId === "number" ? message.metadata.custom.editEntryId as EntryId : undefined}
                       entryKind={typeof message.metadata.custom.entryKind === "string" ? message.metadata.custom.entryKind : undefined}
-                      onFork={actions.forkAt}
+                      onFork={fork}
                     />
                   )}
                 </ThreadPrimitive.Messages>
@@ -218,21 +216,21 @@ export function App() {
                       </ThreadPrimitive.Suggestions>
                     </div>
                   </AuiIf>
-                  <Composer whenBusy={whenBusy} onModeChange={setWhenBusy} />
+                  <Composer />
                   <p className="composer-hint">Enter to send · Shift + Enter for a new line</p>
                 </div>
               </ThreadPrimitive.ViewportFooter>
             </ThreadPrimitive.Viewport>
           </ThreadPrimitive.Root>
         </main>
-      </div>
-    </AssistantRuntimeProvider>
+    </div>
   );
 }
 
 function ConversationItem() {
   const aui = useAui();
   const item = useAuiState((s) => s.threadListItem);
+  const title = item.title ?? (item.remoteId ? `Conversation ${item.remoteId}` : "New conversation");
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState<string>();
   return (
@@ -254,15 +252,13 @@ function ConversationItem() {
       ) : (
         <div className="conversation-row">
           <ThreadListItemPrimitive.Trigger className="conversation-trigger">
-            <ThreadListItemPrimitive.Title fallback="New conversation" />
+            <ThreadListItemPrimitive.Title fallback={title} />
           </ThreadListItemPrimitive.Trigger>
           <details className="conversation-menu">
-            <summary aria-label={`Actions for ${item.title ?? item.id}`}>More</summary>
+            <summary aria-label={`Actions for ${title}`}>More</summary>
             <div>
               <button onClick={() => setRenaming(true)}>Rename</button>
-              {item.status === "archived"
-                ? <ThreadListItemPrimitive.Unarchive>Unarchive</ThreadListItemPrimitive.Unarchive>
-                : <ThreadListItemPrimitive.Archive>Archive</ThreadListItemPrimitive.Archive>}
+
             </div>
           </details>
         </div>
@@ -272,10 +268,9 @@ function ConversationItem() {
   );
 }
 
-function Composer({ whenBusy, onModeChange }: {
-  whenBusy: "followUp" | "steer";
-  onModeChange: (mode: "followUp" | "steer") => void;
-}) {
+function Composer() {
+  const aui = useAui();
+  const canSend = useAuiState((s) => s.composer.canSend && !s.thread.isDisabled);
   return (
     <ComposerPrimitive.Root className="composer">
       <ComposerPrimitive.AttachmentDropzone className="composer-dropzone">
@@ -295,19 +290,15 @@ function Composer({ whenBusy, onModeChange }: {
           <AuiIf condition={(s) => s.thread.capabilities.dictation && s.composer.dictation !== undefined}>
             <ComposerPrimitive.StopDictation className="text-button">Stop dictation</ComposerPrimitive.StopDictation>
           </AuiIf>
-          <label className="submission-mode">
-            <span>While busy</span>
-            <select aria-label="Send while busy" value={whenBusy} onChange={(event) => onModeChange(event.target.value as "followUp" | "steer")}>
-              <option value="followUp">Queue follow-up</option>
-              <option value="steer">Steer current run</option>
-            </select>
-          </label>
           <div className="send-actions">
+            <AuiIf condition={(s) => s.thread.isRunning && s.thread.capabilities.queue}>
+              <button type="button" className="text-button" disabled={!canSend} onClick={() => aui.composer().send({ steer: false })}>Queue follow-up</button>
+            </AuiIf>
             <AuiIf condition={(s) => s.thread.isRunning && s.thread.capabilities.cancel}>
               <ComposerPrimitive.Cancel className="stop-button" aria-label="Stop response">Stop</ComposerPrimitive.Cancel>
             </AuiIf>
             <ComposerPrimitive.Send className="send-button">
-              <AuiIf condition={(s) => s.thread.isRunning}>{whenBusy === "steer" ? "Steer" : "Queue follow-up"}</AuiIf>
+              <AuiIf condition={(s) => s.thread.isRunning}>Steer</AuiIf>
               <AuiIf condition={(s) => !s.thread.isRunning}>Send</AuiIf>
             </ComposerPrimitive.Send>
           </div>
@@ -352,6 +343,8 @@ function ChatMessage({ role, entryId, editEntryId, entryKind, onFork }: {
   const [forking, setForking] = useState(false);
   const [error, setError] = useState<string>();
   const forkEntryId = editEntryId ?? entryId;
+  const branchCount = useAuiState((s) => s.message.branchCount);
+  const isNotice = entryKind === ResetEntry.kind || entryKind === CompactionEntry.kind;
 
   const fork = async () => {
     if (forkEntryId === undefined) return;
@@ -367,9 +360,9 @@ function ChatMessage({ role, entryId, editEntryId, entryKind, onFork }: {
   };
 
   return (
-    <MessagePrimitive.Root className="message" data-role={role} data-entry-id={entryId}>
+    <MessagePrimitive.Root className="message" data-role={role} data-entry-id={entryId} data-branch-count={branchCount}>
       <div className="message-label">
-        {role === "user" ? "You" : role === "assistant" ? "Pi" : "System"}
+        {isNotice ? "Context" : role === "user" ? "You" : role === "assistant" ? "Pi" : "System"}
       </div>
       <div className="message-content">
         <MessagePrimitive.Parts components={messageParts} />
@@ -379,7 +372,7 @@ function ChatMessage({ role, entryId, editEntryId, entryKind, onFork }: {
           </ErrorPrimitive.Root>
         </MessagePrimitive.Error>
       </div>
-      <ActionBarPrimitive.Root className="message-actions">
+      {isNotice ? null : <ActionBarPrimitive.Root className="message-actions">
         <ActionBarPrimitive.Copy className="text-button">Copy</ActionBarPrimitive.Copy>
         {forkEntryId !== undefined ? <button className="text-button" disabled={forking} onClick={() => void fork()}>{forking ? "Forking…" : "Fork from here"}</button> : null}
         {role === "user" && entryKind === "pi.user" ? <AuiIf condition={(s) => s.thread.capabilities.edit}><ActionBarPrimitive.Edit className="text-button">Edit</ActionBarPrimitive.Edit></AuiIf> : null}
@@ -396,7 +389,7 @@ function ChatMessage({ role, entryId, editEntryId, entryKind, onFork }: {
         <AuiIf condition={(s) => s.thread.capabilities.speech && s.message.speech !== undefined && s.message.speech.status.type !== "ended"}>
           <ActionBarPrimitive.StopSpeaking className="text-button">Stop reading</ActionBarPrimitive.StopSpeaking>
         </AuiIf>
-      </ActionBarPrimitive.Root>
+      </ActionBarPrimitive.Root>}
       {error ? <p className="control-error" role="alert">{error}</p> : null}
     </MessagePrimitive.Root>
   );
@@ -418,9 +411,10 @@ function Reasoning({ text }: { text: string }) {
 const messageParts = {
   Text: MarkdownText,
   Reasoning,
-  tools: { ...toolRenderers, by_name: { ...toolRenderers.by_name, request_human_input: HumanTool } },
+  tools: { ...toolRenderers, by_name: { ...toolRenderers.by_name, request_human_input: HumanInputTool } },
+  data: { by_name: { "pi-context": ContextNotice } },
 };
 
-function HumanTool(props: ToolCallMessagePartProps) {
-  return <HumanInputTool {...props} client={client} />;
+function ContextNotice({ data }: DataMessagePartProps<{ kind: string }>) {
+  return <p className="context-notice">{data.kind === "pi.reset" ? "Conversation context reset" : "Conversation context compacted"}</p>;
 }
