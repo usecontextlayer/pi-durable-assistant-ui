@@ -1,0 +1,28 @@
+{
+  "name": "pi-durable-assistant-ui-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@pi-ui/demo...",
+    "build": "turbo run build --filter=@pi-ui/demo...",
+    "check": "turbo run check --filter=@pi-ui/demo... && tsc --noEmit",
+    "test": "node --experimental-eventsource node_modules/vitest/vitest.mjs run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "turbo": "2.11.10",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/chord": "1.5.0"
+  }
+}

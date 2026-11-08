@@ -1,0 +1,32 @@
+{
+  "name": "@usecontextlayer/pi-durable-assistant-ui",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
+  },
+  "peerDependencies": {
+    "@assistant-ui/react": "0.15.32",
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0"
+  },
+  "devDependencies": {
+    "@assistant-ui/react": "0.15.32",
+    "react": "19.3.1"
+  }
+}
