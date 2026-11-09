@@ -27,7 +27,7 @@ The integration uses Pi Durable/AI/Chord 1.5.0 and Assistant UI 0.15.32. Pi owns
 | Archive, unarchive and delete | No corresponding native Pi 1.5.0 operation | Required delete/archive methods reject; optional unarchive is omitted; no UI controls or custom archive metadata |
 | Suggestions | Native metadata document with static defaults | Suggestions render through Assistant UI; no extra model call or synthetic answer |
 | Durable human input | Replay-safe native tool, task document and watchDoc | Same task/call after restart; browser pending → reload → response → original native tool result |
-| Speech and dictation | Official Assistant UI browser adapters, support-gated controls | Integrated and typechecked; actual microphone capture and audible playback have not been verified. Browser/device permission remains required |
+| Speech and dictation | Official Assistant UI browser adapters, support-gated controls | User-confirmed microphone dictation, audible playback and Stop reading in Chrome 156 on macOS on 2026-11-08. Browser support and microphone permission remain required |
 | Real-model operation | Native Anthropic provider, Haiku-only catalog | Live Haiku response and browser edited retry completed with exact native outcomes |
 | Independent host consumption | Structural PiDurableClient; separately built package | Same conversation-scoped integration runs over HTTP/SSE and a direct native binding; no demo import in the adapter |
 

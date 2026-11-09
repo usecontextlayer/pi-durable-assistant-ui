@@ -67,7 +67,7 @@ Pi Durable 1.5.0 has no native queue move/edit, permanent conversation deletion,
 
 `createPiDurableAttachmentAdapter(client.uploadFile)` uses Assistant UI's attachment lifecycle and returns `CompleteAttachment`. The uploader supplies a name and native Pi input blocks; host storage paths, download URLs and content types remain host concerns. Removing a draft attachment does not delete an uploaded file from the host workspace.
 
-Pass Assistant UI's `speech`, `dictation`, `attachments` and optional `feedback` adapters directly to the runtime hook. Without a feedback override, the native host feedback extension is used when available. Browser speech and dictation use Assistant UI's official adapters and support checks; actual microphone capture and audible playback remain device-dependent and unverified in this project.
+Pass Assistant UI's `speech`, `dictation`, `attachments` and optional `feedback` adapters directly to the runtime hook. Without a feedback override, the native host feedback extension is used when available. Browser speech and dictation use Assistant UI's official adapters and support checks. Actual microphone dictation, audible playback and stopping playback were manually verified in Chrome 156 on macOS on 2026-11-08; availability still depends on browser support and microphone permission.
 
 ## Build from source
 
